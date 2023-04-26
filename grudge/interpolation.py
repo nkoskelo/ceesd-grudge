@@ -159,8 +159,10 @@ def volume_and_surface_quadrature_interpolation(
                     dcoll, dd_quad, dd_face_quad), vec
         )
 
+    from grudge.dof_desc import DISCR_TAG_BASE
+    dd_vol = dd_quad.with_discr_tag(DISCR_TAG_BASE)
     actx = vec.array_context
-    discr = dcoll.discr_from_dd("vol")
+    discr = dcoll.discr_from_dd(dd_vol)
     quad_volm_discr = dcoll.discr_from_dd(dd_quad)
     quad_face_discr = dcoll.discr_from_dd(dd_face_quad)
 

@@ -112,8 +112,11 @@ def volume_quadrature_project(
     from grudge.interpolation import volume_quadrature_interpolation_matrix
     from grudge.op import inverse_mass
 
+    from grudge.dof_desc import DISCR_TAG_BASE
+    dd_vol = dd_q.with_discr_tag(DISCR_TAG_BASE)
+
     actx = vec.array_context
-    discr = dcoll.discr_from_dd("vol")
+    discr = dcoll.discr_from_dd(dd_vol)
     quad_discr = dcoll.discr_from_dd(dd_q)
     jacobians = area_element(
         actx, dcoll, dd=dd_q,
@@ -134,6 +137,7 @@ def volume_quadrature_project(
 
     return inverse_mass(
         dcoll,
+        dd_vol,
         DOFArray(
             actx,
             data=tuple(

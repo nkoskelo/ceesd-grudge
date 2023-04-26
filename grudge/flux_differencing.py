@@ -148,6 +148,9 @@ def _single_axis_hybridized_derivative_kernel(
             flux_matrix
         )
 
+    from grudge.dof_desc import DISCR_TAG_BASE
+    dd_vol = dd_quad.with_discr_tag(DISCR_TAG_BASE)
+
     from grudge.geometry import \
         area_element, inverse_surface_metric_derivative
     from grudge.interpolation import (
@@ -208,11 +211,11 @@ def _single_axis_hybridized_derivative_kernel(
                         tagged=(FirstAxisIsElementsTag(),))
 
             for bgrp, qvgrp, qafgrp, fmat_i, ijm_i in zip(
-                dcoll.discr_from_dd("vol").groups,
-                dcoll.discr_from_dd(dd_quad).groups,
-                dcoll.discr_from_dd(dd_face_quad).groups,
-                flux_matrix,
-                inverse_jac_matrix()
+                    dcoll.discr_from_dd(dd_vol).groups,
+                    dcoll.discr_from_dd(dd_quad).groups,
+                    dcoll.discr_from_dd(dd_face_quad).groups,
+                    flux_matrix,
+                    inverse_jac_matrix()
             )
         )
     )
