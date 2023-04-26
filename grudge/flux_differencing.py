@@ -173,10 +173,10 @@ def _single_axis_hybridized_derivative_kernel(
                             [
                                 volume_and_surface_quadrature_interpolation(
                                     dcoll, dd_quad, dd_face_quad,
-                                    area_element(actx, dcoll)
+                                    area_element(actx, dcoll, dd=dd_vol)
                                     * inverse_surface_metric_derivative(
                                         actx, dcoll,
-                                        rst_ax, xyz_axis
+                                        rst_ax, xyz_axis, dd=dd_vol
                                     )
                                 ) for rst_ax in range(dcoll.dim)
                             ]
