@@ -3,6 +3,7 @@
 .. autoclass:: PytatoPyOpenCLArrayContext
 .. autoclass:: MPIBasedArrayContext
 .. autoclass:: MPIPyOpenCLArrayContext
+.. autoclass:: MPINumpyArrayContext
 .. class:: MPIPytatoArrayContext
 .. autofunction:: get_reasonable_array_context_class
 """
@@ -604,6 +605,29 @@ def get_reasonable_array_context_class(
                 (_HAVE_SINGLE_GRID_WORK_BALANCING or _HAVE_FUSION_ACTX or not lazy))
     return actx_class
 
+# }}}
+
+
+# {{{ distributed + numpy
+try:
+    from arraycontext import NumpyArrayContext
+
+    class MPINumpyArrayContext(NumpyArrayContext, MPIBasedArrayContext):
+        """An array context for using distributed computation with :mod:`numpy`
+        eager evaluation.
+        .. autofunction:: __init__
+        """
+
+        def __init__(self, mpi_communicator) -> None:
+            super().__init__()
+            self.mpi_communicator = mpi_communicator
+
+        def clone(self):
+            return type(self)(self.mpi_communicator)
+
+except ImportError:
+    print("Failed to import numpy array context.")
+    pass
 # }}}
 
 
