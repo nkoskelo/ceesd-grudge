@@ -71,6 +71,7 @@ from grudge.trace_pair import TracePair
 from pytools.obj_array import make_obj_array
 
 import grudge.op as op
+import grudge.geometry as geo
 
 
 # {{{ Array containers for the Euler model
@@ -261,10 +262,11 @@ class InviscidWallBC(InviscidBCObject):
             self,
             dcoll: DiscretizationCollection,
             dd_bc: DOFDesc,
-            restricted_state: ConservedEulerField, t=0):
-        actx = restricted_state.array_context
-        nhat = thaw(dcoll.normal(dd_bc), actx)
-        interior = restricted_state
+            state: ConservedEulerField, t=0):
+        actx = state.array_context
+        dd_base = as_dofdesc("vol").with_discr_tag(DISCR_TAG_BASE)
+        nhat = geo.normal(actx, dcoll, dd_bc)
+        interior = op.project(dcoll, dd_base, dd_bc, state)
 
         return TracePair(
             dd_bc,
@@ -325,7 +327,10 @@ def euler_numerical_flux(
         exterior=euler_volume_flux(dcoll, q_rr, gamma)
     )
     num_flux = flux_tpair.avg
-    normal = thaw(dcoll.normal(tpair.dd), actx)
+    normal = geo.normal(actx, dcoll, dd_intfaces)
+
+    if lf_stabilization:
+        from arraycontext import outer
 
     if dissipation:
         # Compute jump penalization parameter
