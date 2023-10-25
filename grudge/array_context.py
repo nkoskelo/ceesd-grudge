@@ -628,9 +628,11 @@ except ImportError:
     pass
 # }}}
 
-# {{{ Tensor product array context
+# {{{ Tensor product array contexts
 
 # {{{ Relevant tags
+
+
 class OutputIsTensorProductDOFArrayOrdered(Tag):
     """Signify that the strides will not be of order "C" or "F". See
     :class:`grudge.array_context.TensorProductArrayContext` for more details.
@@ -639,6 +641,8 @@ class OutputIsTensorProductDOFArrayOrdered(Tag):
 # }}}
 
 # {{{ Eager TP array context
+
+
 class TensorProductArrayContext(_PyOpenCLArrayContextBase):
     """Specialized array context for use with tensor product elements.
 
@@ -667,6 +671,12 @@ class TensorProductArrayContext(_PyOpenCLArrayContextBase):
                 t_unit = t_unit.with_kernel(knl)
 
         return super().transform_loopy_program(t_unit)
+
+
+# {{{ Distributed eager tensor product array context
+class TensorProductMPIPyOpenCLArrayContext(MPIPyOpenCLArrayContext,
+                                         TensorProductArrayContext):
+    pass
 # }}}
 
 # {{{ Lazy tensor product array context
