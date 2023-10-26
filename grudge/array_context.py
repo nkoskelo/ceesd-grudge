@@ -628,20 +628,21 @@ except ImportError:
     pass
 # }}}
 
+
 # {{{ Tensor product array contexts
 
 # {{{ Relevant tags
-
 
 class OutputIsTensorProductDOFArrayOrdered(Tag):
     """Signify that the strides will not be of order "C" or "F". See
     :class:`grudge.array_context.TensorProductArrayContext` for more details.
     """
     pass
+
 # }}}
 
-# {{{ Eager TP array context
 
+# {{{ Eager TP array contexts
 
 class TensorProductArrayContext(_PyOpenCLArrayContextBase):
     """Specialized array context for use with tensor product elements.
@@ -653,33 +654,35 @@ class TensorProductArrayContext(_PyOpenCLArrayContextBase):
     """
 
     def transform_loopy_program(self, t_unit):
-        if len(t_unit.callables_table) == 1:
-            knl = t_unit.default_entrypoint
-            if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
-                new_args = []
-                for arg in knl.args:
-                    if arg.is_output:
-                        arg = arg.copy(dim_tags=(
-                            f"N{len(arg.shape)-1},"
-                            + ",".join(f"N{i}"
-                                       for i in range(len(arg.shape)-1))
-                            ))
+        #if len(t_unit.callables_table) == 1:
+        knl = t_unit.default_entrypoint
+        if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
+            new_args = []
+            for arg in knl.args:
+                if arg.is_output:
+                    arg = arg.copy(dim_tags=(
+                        f"N{len(arg.shape)-1},"
+                        + ",".join(f"N{i}"
+                                   for i in range(len(arg.shape)-1))
+                        ))
 
-                    new_args.append(arg)
+                new_args.append(arg)
 
-                knl = knl.copy(args=new_args)
-                t_unit = t_unit.with_kernel(knl)
+            knl = knl.copy(args=new_args)
+            t_unit = t_unit.with_kernel(knl)
 
         return super().transform_loopy_program(t_unit)
 
 
-# {{{ Distributed eager tensor product array context
 class TensorProductMPIPyOpenCLArrayContext(MPIPyOpenCLArrayContext,
                                          TensorProductArrayContext):
     pass
+
 # }}}
 
-# {{{ Lazy tensor product array context
+
+# {{{ Lazy tensor product array contexts
+
 class PytatoTensorProductArrayContext(PytatoPyOpenCLArrayContext):
     def transform_dag(self, dag):
         return super().transform_dag(dag)
@@ -703,21 +706,47 @@ class PytatoTensorProductArrayContext(PytatoPyOpenCLArrayContext):
             knl = knl.copy(args=new_args)
         # }}}
 
-        # {{{ prefetch
-        # }}}
+        return super().transform_loopy_program(t_unit)
 
-        # {{{ tile
-        # }}}
+# }}}
 
-        import loopy as lp
-        # FIXME: remove this (eventually)
-        knl = lp.set_options(knl, insert_gbarriers=True)
-        t_unit = t_unit.with_kernel(knl)
-        self.dev_code = lp.generate_code_v2(t_unit).device_code()
+
+# {{{ TP fusion actx
+
+from meshmode.array_context import FusionContractorArrayContext
+
+
+class TensorProductFusionContractorArrayContext(FusionContractorArrayContext):
+
+    def transform_loopy_program(self, t_unit):
+        if len(t_unit.callables_table) == 1:
+            knl = t_unit.default_entrypoint
+            if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
+                new_args = []
+                for arg in knl.args:
+                    if arg.is_output:
+                        arg = arg.copy(dim_tags=(
+                            f"N{len(arg.shape)-1},"
+                            + ",".join(f"N{i}"
+                                       for i in range(len(arg.shape)-1))
+                            ))
+
+                    new_args.append(arg)
+
+                knl = knl.copy(args=new_args)
+                t_unit = t_unit.with_kernel(knl)
 
         return super().transform_loopy_program(t_unit)
-# }}}
+
+
+class TensorProductMPIFusionContractorArrayContext(
+        MPIPytatoArrayContextBase, TensorProductFusionContractorArrayContext):
+    pass
 
 # }}}
+
+
+# }}}
+
 
 # vim: foldmethod=marker
