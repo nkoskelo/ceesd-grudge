@@ -654,7 +654,6 @@ class TensorProductArrayContext(_PyOpenCLArrayContextBase):
     """
 
     def transform_loopy_program(self, t_unit):
-        #if len(t_unit.callables_table) == 1:
         knl = t_unit.default_entrypoint
         if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
             new_args = []
@@ -719,28 +718,27 @@ from meshmode.array_context import FusionContractorArrayContext
 class TensorProductFusionContractorArrayContext(FusionContractorArrayContext):
 
     def transform_loopy_program(self, t_unit):
-        if len(t_unit.callables_table) == 1:
-            knl = t_unit.default_entrypoint
-            if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
-                new_args = []
-                for arg in knl.args:
-                    if arg.is_output:
-                        arg = arg.copy(dim_tags=(
-                            f"N{len(arg.shape)-1},"
-                            + ",".join(f"N{i}"
-                                       for i in range(len(arg.shape)-1))
-                            ))
+        knl = t_unit.default_entrypoint
+        if knl.tags_of_type(OutputIsTensorProductDOFArrayOrdered):
+            new_args = []
+            for arg in knl.args:
+                if arg.is_output:
+                    arg = arg.copy(dim_tags=(
+                        f"N{len(arg.shape)-1},"
+                        + ",".join(f"N{i}"
+                                   for i in range(len(arg.shape)-1))
+                        ))
 
-                    new_args.append(arg)
+                new_args.append(arg)
 
-                knl = knl.copy(args=new_args)
-                t_unit = t_unit.with_kernel(knl)
+            knl = knl.copy(args=new_args)
+            t_unit = t_unit.with_kernel(knl)
 
         return super().transform_loopy_program(t_unit)
 
 
 class TensorProductMPIFusionContractorArrayContext(
-        MPIPytatoArrayContextBase, TensorProductFusionContractorArrayContext):
+        MPIPytatoArrayContext, TensorProductFusionContractorArrayContext):
     pass
 
 # }}}
