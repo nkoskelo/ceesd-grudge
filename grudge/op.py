@@ -102,7 +102,7 @@ from grudge.dof_desc import (
 )
 
 from grudge.interpolation import interp
-from grudge.projection import project
+from grudge.projection import project, volume_quadrature_project
 
 from grudge.reductions import (
     norm,
@@ -125,8 +125,12 @@ from grudge.trace_pair import (
     interior_trace_pair,
     interior_trace_pairs,
     local_interior_trace_pair,
+    connected_parts,
+    inter_volume_trace_pairs,
+    local_inter_volume_trace_pairs,
     #connected_ranks,
     cross_rank_trace_pairs,
+    cross_rank_inter_volume_trace_pairs,
     bdry_trace_pair,
     bv_trace_pair
 )
@@ -134,6 +138,7 @@ from grudge.trace_pair import (
 
 __all__ = (
     "project",
+    "volume_quadrature_project",
     "interp",
 
     "norm",
@@ -154,7 +159,7 @@ __all__ = (
     "interior_trace_pair",
     "interior_trace_pairs",
     "local_interior_trace_pair",
-    "connected_ranks",
+    #"connected_ranks",
     "cross_rank_trace_pairs",
     "bdry_trace_pair",
     "bv_trace_pair",
