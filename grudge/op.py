@@ -160,7 +160,11 @@ __all__ = (
     "interior_trace_pairs",
     "local_interior_trace_pair",
     #"connected_ranks",
+    "connected_parts",
+    "inter_volume_trace_pairs",
+    "local_inter_volume_trace_pairs",
     "cross_rank_trace_pairs",
+    "cross_rank_inter_volume_trace_pairs",
     "bdry_trace_pair",
     "bv_trace_pair",
 
