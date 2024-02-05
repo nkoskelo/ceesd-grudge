@@ -173,8 +173,23 @@ def test_build_jacobian(actx_factory):
 
 @pytest.mark.parametrize("dim", [1, 2])
 @pytest.mark.parametrize("degree", [2, 4])
-def test_wave_dt_estimate(actx_factory, dim, degree, visualize=False):
-    actx = actx_factory()
+@pytest.mark.parametrize("tpe", [False, True])
+def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
+
+    import pyopencl as cl
+    from grudge.array_context import TensorProductArrayContext
+
+    if tpe:
+        ctx = cl.create_some_context()
+        queue = cl.CommandQueue(ctx)
+        actx = TensorProductArrayContext(queue)
+    else:
+        actx = actx_factory()
+
+    # {{{ cases
+
+    from meshmode.mesh import TensorProductElementGroup
+    group_cls = TensorProductElementGroup if tpe else None
 
     import meshmode.mesh.generation as mgen
 
@@ -182,10 +197,24 @@ def test_wave_dt_estimate(actx_factory, dim, degree, visualize=False):
     b = [1, 1, 1]
     mesh = mgen.generate_regular_rect_mesh(
             a=a[:dim], b=b[:dim],
-            nelements_per_axis=(3,)*dim)
+            nelements_per_axis=(3,)*dim,
+            group_cls=group_cls)
+
     assert mesh.dim == dim
 
-    dcoll = DiscretizationCollection(actx, mesh, order=degree)
+    from meshmode.discretization.poly_element import \
+        LegendreGaussLobattoTensorProductGroupFactory as Lgl
+
+    from grudge.dof_desc import DISCR_TAG_BASE
+    order = degree
+    dtag_to_grp_fac = None
+    if tpe:
+        order = None
+        dtag_to_grp_fac = {
+            DISCR_TAG_BASE: Lgl(degree)
+        }
+    dcoll = DiscretizationCollection(actx, mesh, order=order,
+                                     discr_tag_to_group_factory=dtag_to_grp_fac)
 
     from grudge.models.wave import WeakWaveOperator
     wave_op = WeakWaveOperator(dcoll, c=1)
