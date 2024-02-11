@@ -216,14 +216,12 @@ def main(ctx_factory, order=3, final_time=1, resolution=16,
     queue = cl.CommandQueue(cl_ctx)
 
     if lazy:
-        from grudge.array_context import PytatoTensorProductArrayContext
-        actx = PytatoTensorProductArrayContext(
+        actx = PytatoPyOpenCLArrayContext(
             queue,
             allocator=cl_tools.MemoryPool(cl_tools.ImmediateAllocator(queue)),
         )
     else:
-        from grudge.array_context import TensorProductArrayContext
-        actx = TensorProductArrayContext(
+        actx = PyOpenCLArrayContext(
             queue,
             allocator=cl_tools.MemoryPool(cl_tools.ImmediateAllocator(queue)),
             force_device_scalars=True,

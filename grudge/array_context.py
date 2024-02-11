@@ -678,8 +678,7 @@ except ImportError:
 # {{{ tensor product-specific machinery
 
 class OutputIsTensorProductDOFArrayOrdered(Tag):
-    """Signify that the strides will not be of order "C" or "F". See
-    :class:`grudge.array_context.TensorProductArrayContext` for more details.
+    """Signify that the strides will not be of order "C" or "F".
 
     The strides for the arrays containing tensor product element data are of the
     form (slow, fastest, faster, fast). These strides are not "C" or "F" order.

@@ -50,15 +50,8 @@ from meshmode import _acf  # noqa: F401
 @pytest.mark.parametrize("tpe", [False, True])
 def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
     from grudge.dt_utils import dt_geometric_factors
-    import pyopencl as cl
-    from grudge.array_context import TensorProductArrayContext
 
-    if tpe:
-        ctx = cl.create_some_context()
-        queue = cl.CommandQueue(ctx)
-        actx = TensorProductArrayContext(queue)
-    else:
-        actx = actx_factory()
+    actx = actx_factory()
 
     # {{{ cases
 
@@ -176,15 +169,7 @@ def test_build_jacobian(actx_factory):
 @pytest.mark.parametrize("tpe", [False, True])
 def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
 
-    import pyopencl as cl
-    from grudge.array_context import TensorProductArrayContext
-
-    if tpe:
-        ctx = cl.create_some_context()
-        queue = cl.CommandQueue(ctx)
-        actx = TensorProductArrayContext(queue)
-    else:
-        actx = actx_factory()
+    actx = actx_factory()
 
     # {{{ cases
 
