@@ -650,6 +650,7 @@ def get_reasonable_array_context_class(
 
 # }}}
 
+
 # {{{ tensor product-specific machinery
 
 class OutputIsTensorProductDOFArrayOrdered(Tag):
@@ -676,18 +677,5 @@ class InverseMassMatrix1d(Tag):
 
 # }}}
 
-# {{{ Eager TP array context
-class TensorProductArrayContext(_PyOpenCLArrayContextBase):
-    """Specialized array context for use with tensor product elements.
-    """
-# }}}
-
-# {{{ Lazy tensor product array context
-class PytatoTensorProductArrayContext(PytatoPyOpenCLArrayContext):
-    def transform_dag(self, dag):
-        return super().transform_dag(dag)
-# }}}
-
-# }}}
 
 # vim: foldmethod=marker
