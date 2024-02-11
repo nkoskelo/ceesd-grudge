@@ -75,11 +75,13 @@ from arraycontext import (ArrayContext, map_array_container, tag_axes,
 from functools import partial
 
 from meshmode.dof_array import DOFArray, warn
+from meshmode.discretization.poly_element import (
+    TensorProductElementGroupBase as TensorProductElementGroup,
+    SimplexElementGroupBase as SimplexElementGroup)
 from meshmode.transform_metadata import (FirstAxisIsElementsTag,
                                          DiscretizationDOFAxisTag,
                                          DiscretizationElementAxisTag,
                                          DiscretizationFaceAxisTag)
-from meshmode.discretization.poly_element import TensorProductElementGroupBase
 
 from modepy.tools import (
         reshape_array_for_tensor_product_space as fold,
@@ -87,8 +89,7 @@ from modepy.tools import (
 
 from grudge.discretization import DiscretizationCollection
 from grudge.dof_desc import as_dofdesc
-from grudge.array_context import (
-        OutputIsTensorProductDOFArrayOrdered)
+from grudge.array_context import OutputIsTensorProductDOFArrayOrdered
 
 from pytools import keyed_memoize_in
 from pytools.obj_array import make_obj_array
@@ -199,13 +200,62 @@ def _single_axis_derivative_kernel(
 
     # {{{ tensor product single axis derivative
 
-    # FIXME: actually implement single axis tensor product derivatives
     def compute_tensor_product_derivative(actx, grp, get_diff_mat, vec, ijm,
                                           xyz_axis, metric_in_matvec):
 
+        vec = fold(grp.space, vec)
 
-        return compute_simplicial_derivative(actx, grp, grp, get_diff_mat, vec,
-                                             ijm, xyz_axis, metric_in_matvec)
+        if metric_in_matvec:
+            stiff_1d, mass_1d = get_diff_mat(actx, grp, grp)
+
+            apply_mass_axes = set(range(grp.dim)) - {xyz_axis}
+
+            for ax in apply_mass_axes:
+                vec_mass_applied = single_axis_operator_application(
+                    actx, grp.dim, mass_1d, ax, vec,
+                    tags=(FirstAxisIsElementsTag(),
+                          OutputIsTensorProductDOFArrayOrdered(),),
+                    arg_names=("mass_1d", "vec")
+                )
+
+            ref_weak_derivative = unfold(
+                grp.space,
+                single_axis_operator_application(
+                    actx, grp.dim, stiff_1d, xyz_axis, vec_mass_applied,
+                    tags=(FirstAxisIsElementsTag(),
+                          OutputIsTensorProductDOFArrayOrdered(),),
+                    arg_names=("stiff_1d", "vec_with_mass_applied"))
+            )
+
+            derivative = actx.einsum(
+                'rej,ej->ej',
+                ijm[xyz_axis],
+                ref_weak_derivative,
+                tagged=(FirstAxisIsElementsTag(),),
+                arg_names=("inv_jac_t", "ref_weak_derivative")
+            )
+
+        else:
+            diff_mat = get_diff_mat(actx, grp, grp)
+
+            ref_derivative = unfold(
+                grp.space,
+                single_axis_operator_application(
+                    actx, grp.dim, diff_mat, xyz_axis, vec,
+                    tags=(FirstAxisIsElementsTag(),
+                          OutputIsTensorProductDOFArrayOrdered(),),
+                    arg_names=("diff_mat", "vec"))
+            )
+
+            derivative = actx.einsum(
+                'rej,ej->ej',
+                ijm[xyz_axis],
+                ref_derivative,
+                tagged=(FirstAxisIsElementsTag(),),
+                arg_names=("inv_jac_t", "ref_derivs")
+            )
+
+        return derivative
 
     # }}}
 
@@ -213,17 +263,17 @@ def _single_axis_derivative_kernel(
     # {{{ simplicial single axis derivative
 
     def compute_simplicial_derivative(actx, in_grp, out_grp,
-                                      get_diff_mat, vec_i, ijm_i,
+                                      get_diff_mat, vec, ijm,
                                       xyz_axis, metric_in_matvec):
         # r for rst axis
         return actx.einsum(
             "rej,rij,ej->ei" if metric_in_matvec else "rei,rij,ej->ei",
-            ijm_i[xyz_axis],
+            ijm[xyz_axis],
             get_diff_mat(
                 actx,
                 out_element_group=out_grp,
                 in_element_group=in_grp),
-            vec_i,
+            vec,
             arg_names=("inv_jac_t", "ref_stiffT_mat", "vec", ),
             tagged=(FirstAxisIsElementsTag(),))
 
@@ -233,10 +283,9 @@ def _single_axis_derivative_kernel(
     return DOFArray(
         actx,
         data=tuple(
-            compute_tensor_product_derivative(actx, in_grp, out_grp,
-                                              get_diff_mat, vec_i, ijm_i,
-                                              xyz_axis, metric_in_matvec)
-            if isinstance(in_grp, TensorProductElementGroupBase)
+            compute_tensor_product_derivative(actx, in_grp, get_diff_mat, vec_i,
+                                              ijm_i, xyz_axis, metric_in_matvec)
+            if isinstance(in_grp, TensorProductElementGroup)
             else compute_simplicial_derivative(actx, in_grp, out_grp,
                                                get_diff_mat, vec_i, ijm_i,
                                                xyz_axis, metric_in_matvec)
@@ -258,27 +307,7 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
         # TODO: add note about inverse mass simplification, point to
         # op.inverse_mass (assuming this is where the explanation will live)
         """
-        Exploits tensor product structure to reduce complexity. Applies a
-        differentiation operator containing 1D information to a tensor of DOF
-        data. For example, in the 2D strong form case, this computes partial
-        derivatives in a similar manner to
-
-        .. math::
-
-            \partial_x \mathbf{f}_{ij} = \sum_{\ell} \mathbf{J}^e_{ij}
-            \mathbf{D}_{i\ell} \mathbf{f}_{\ell j}
-
-        where $\mathbf{D}$ is a 1D differentiation operator, $\mathbf{f}$ is a
-        vector of function data, $\mathbf{J}^e$ is the element Jacobian matrix.
-        The weak form uses a 1D element mass operator and a 1D element stiffness
-        operator to perform the contraction
-
-        .. math::
-
-            \partial_x \mathbf{f}_{ij} = \sum_{\ell,b} \mathbf{J}^e_{\ell b}
-            \mathbf{f}_{\ell b} \mathbf{S}^e_{i\ell} \mathbf{M}^e_{jb}
         """
-
 
         if grp.dim > 3 and metric_in_matvec:
             warn('Efficient tensor product weak '
@@ -288,69 +317,69 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
             return compute_simplicial_grad(actx, grp, grp, diff_mat, vec, ijm,
                                            metric_in_matvec)
 
-        # reshape u to expose tensor product structure
+        # reshape vector to expose tensor product structure
         vec = fold(grp.space, vec)
-        diff_mat = get_diff_mat(actx, grp, grp)
 
-        # weak form case:
-        #   3D weak_x: einsum("estu,ps,qt,ru->epqr",
-        #                      f, stiff_1D, mass_1D, mass_1D)
-        # TODO:? make this more general, maybe offload to a function that
-        # generates argnames and einsum specs
         if metric_in_matvec:
-            stiff_1D, mass_1D = diff_mat
-            grad = make_obj_array([
-                actx.einsum(
-                    f"e{'bd'[:i]}j{'bd'[i:grp.dim-1]}," +
-                    "ij," +
-                    ("ab,cd" if grp.dim == 3 else "ab") +
-                    "->"
-                    f"e{'ac'[:i]}i{'ac'[i:grp.dim-1]}",
-                    vec,
-                    stiff_1D,
-                    *(mass_1D,)*(grp.dim-1),
-                    arg_names=("vec", "stiff_1D",
-                               *(("mass_1D_1", "mass_1D_2")[:grp.dim-1])),
-                    tagged=(FirstAxisIsElementsTag(),
-                            OutputIsTensorProductDOFArrayOrdered()))
-                for i in range(grp.dim)
-            ])
+            stiff_1d, mass_1d = get_diff_mat(actx, grp, grp)
 
-        # Carries out, e.g., 3D strong form contraction
-        #   x partial: einsum("il,eljk->eijk", D, f)
+            grad = []
+            for xyz_axis in range(grp.dim):
+                grad.append(vec)
+                apply_mass_axes = set(range(grp.dim)) - {xyz_axis}
+
+                # apply mass operators
+                for ax in apply_mass_axes:
+                    grad[xyz_axis] = single_axis_operator_application(
+                        actx, grp.dim, mass_1d, ax, grad[xyz_axis],
+                        tags=(FirstAxisIsElementsTag(),
+                              OutputIsTensorProductDOFArrayOrdered(),),
+                        arg_names=("mass_1d", f"vec_{xyz_axis}")
+                )
+
+                # apply stiffness operator and unfold
+                grad[xyz_axis] = unfold(
+                    grp.space,
+                    single_axis_operator_application(
+                        actx, grp.dim, stiff_1d, xyz_axis, grad[xyz_axis],
+                        tags=(FirstAxisIsElementsTag(),
+                              OutputIsTensorProductDOFArrayOrdered(),),
+                        arg_names=("stiff_1d", f"vec_{xyz_axis}"))
+                )
+
+                # apply metric terms
+                grad[xyz_axis] = actx.einsum(
+                    'rej,ej->ej',
+                    ijm[xyz_axis],
+                    grad[xyz_axis],
+                    tagged=(FirstAxisIsElementsTag(),),
+                    arg_names=("inv_jac_t", f"vec_{xyz_axis}")
+                )
         else:
-            grad = make_obj_array([
-                actx.einsum(
-                    "yz," +
-                    f"e{'abcdfghijkl'[:i]}z{'mnopqstuvwx'[:grp.dim-i-1]}->" +
-                    f"e{'abcdfghijkl'[:i]}y{'mnopqstuvwx'[:grp.dim-i-1]}",
-                    diff_mat,
-                    vec,
-                    arg_names=("diff_mat", "vec"),
-                    tagged=(FirstAxisIsElementsTag(),
-                        OutputIsTensorProductDOFArrayOrdered()))
-                for i in range(grp.dim)
-            ])
+            diff_mat = get_diff_mat(actx, grp, grp)
 
-        # {{{ unreshape grad and apply geometric factors
+            grad = []
+            for xyz_axis in range(grp.dim):
+                grad.append(vec)
+                grad[xyz_axis] = unfold(
+                    grp.space,
+                    single_axis_operator_application(
+                        actx, grp.dim, diff_mat, xyz_axis, grad[xyz_axis],
+                        tags=(FirstAxisIsElementsTag(),
+                              OutputIsTensorProductDOFArrayOrdered(),),
+                        arg_names=("diff_mat", f"vec_{xyz_axis}")
+                    )
+                )
 
-        # TODO: Chain einsums together with geometric factors
-        grad = actx.np.stack([
-            unfold(grp.space, grad[rst_axis])
-            for rst_axis in range(grp.dim)
-        ])
+                grad[xyz_axis] = actx.einsum(
+                    "rej,ej->ej",
+                    ijm[xyz_axis],
+                    grad[xyz_axis],
+                    tagged=(FirstAxisIsElementsTag(),),
+                    arg_names=("inv_jac_t", f"vec_{xyz_axis}")
+                )
 
-        grad = actx.einsum(
-            "xrej,rej->xej",
-            ijm,
-            grad,
-            arg_names=("inv_jac_mat", "grad"),
-            tagged=(FirstAxisIsElementsTag(),)
-        )
-
-        # }}}
-
-        return grad
+        return make_obj_array(grad)
 
     # }}}
 
@@ -377,7 +406,7 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
     per_group_grads = [
         compute_tensor_product_grad(actx, in_grp, get_diff_mat, vec_i, ijm_i,
                                     metric_in_matvec)
-        if isinstance(in_grp, TensorProductElementGroupBase)
+        if isinstance(in_grp, TensorProductElementGroup)
         else compute_simplicial_grad(actx, in_grp, out_grp, get_diff_mat, vec_i,
                                      ijm_i, metric_in_matvec)
 
@@ -414,83 +443,72 @@ def _divergence_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec
             return compute_simplicial_div(actx, grp, grp, diff_mat, vec, ijm,
                                           metric_in_matvec)
 
-        # reshape u to expose tensor product structure
-        diff_mat = get_diff_mat(actx, grp, grp)
         vec = make_obj_array([
-            fold(grp.space, vec[xyz_axis])
-            for xyz_axis in range(grp.dim)
+            fold(grp.space, vec[func_axis])
+            for func_axis in range(vec.shape[0])
         ])
 
-        # weak form
         if metric_in_matvec:
-            stiff_1D, mass_1D = diff_mat
-            partials = make_obj_array([
-                make_obj_array([
-                    actx.einsum(
-                        f"e{'bd'[:i]}j{'bd'[i:grp.dim-1]}," +
-                        "ij," +
-                        ("ab,cd" if grp.dim == 3 else "ab") +
-                        "->"
-                        f"e{'ac'[:i]}i{'ac'[i:grp.dim-1]}",
-                        vec[func_axis],
-                        stiff_1D,
-                        *(mass_1D,)*(grp.dim-1),
-                        arg_names=("vec", "stiff_1D",
-                                   *(("mass_1D_1", "mass_1D_2")[:grp.dim-1])),
-                        tagged=(FirstAxisIsElementsTag(),
-                                OutputIsTensorProductDOFArrayOrdered()))
-                    for i in range(grp.dim)
-                ])
-                for func_axis in range(grp.dim)
-            ])
+            stiff_1d, mass_1d = get_diff_mat(actx, grp, grp)
 
-        # strong form
+            partials = []
+            for func_axis in range(vec.shape[0]):
+                ref = []
+                for xyz_axis in range(grp.dim):
+                    ref.append(vec[func_axis])
+
+                    apply_mass_axes = set(range(grp.dim)) - {xyz_axis}
+                    for ax in apply_mass_axes:
+                        ref[xyz_axis] = single_axis_operator_application(
+                            actx, grp.dim, mass_1d, ax, ref[xyz_axis],
+                            tags=(FirstAxisIsElementsTag(),
+                                  OutputIsTensorProductDOFArrayOrdered(),),
+                            arg_names=("mass_1d", f"vec_{func_axis}_{xyz_axis}")
+                        )
+
+                    ref[xyz_axis] = single_axis_operator_application(
+                        actx, grp.dim, stiff_1d, xyz_axis, ref[xyz_axis],
+                        tags=(FirstAxisIsElementsTag(),
+                              OutputIsTensorProductDOFArrayOrdered(),),
+                        arg_names=("stiff_1d", f"vec_{func_axis}_{xyz_axis}")
+                    )
+
+                partials.append(ref)
+
         else:
-            partials = make_obj_array([
-                make_obj_array([
-                    actx.einsum(
-                        "yz," +
-                        f"e{'abcdfghijkl'[:i]}z{'mnopqstuvwx'[:grp.dim-i-1]}->" +
-                        f"e{'abcdfghijkl'[:i]}y{'mnopqstuvwx'[:grp.dim-i-1]}",
-                        diff_mat,
-                        vec[func_axis],
-                        arg_names=("diff_mat", "vec"),
-                        tagged=(FirstAxisIsElementsTag(),
-                                OutputIsTensorProductDOFArrayOrdered()))
-                    for i in range(grp.dim)
-                ])
-                for func_axis in range(grp.dim)
-            ])
+            diff_mat = get_diff_mat(actx, grp, grp)
 
-        # {{{ unreshape, apply geometric factors, and sum over partials
+            partials = []
+            for func_axis in range(vec.shape[0]):
+                ref = []
+                for xyz_axis in range(grp.dim):
+                    ref.append(vec[func_axis])
 
-        # TODO: Chain einsums together with geometric factors
+                    ref[xyz_axis] = single_axis_operator_application(
+                        actx, grp.dim, diff_mat, xyz_axis, ref[xyz_axis],
+                        tags=(FirstAxisIsElementsTag(),
+                              OutputIsTensorProductDOFArrayOrdered(),),
+                        arg_names=("diff_mat", f"vec_{func_axis}_{xyz_axis}")
+                    )
+
+                partials.append(ref)
+
         partials = actx.np.stack([
-            unfold(grp.space, partials[xyz_axis][rst_axis])
+            unfold(grp.space, partials[func_axis][xyz_axis])
+            for func_axis in range(grp.dim)
             for xyz_axis in range(grp.dim)
-            for rst_axis in range(grp.dim)
         ])
-
-        try:
-            partials = partials.reshape(
-                grp.dim, grp.dim, partials.shape[1], partials.shape[2])
-        except IndexError:
-            partials = partials.reshape(
-                grp.dim, grp.dim, partials.shape[1]
-            )
+        partials = partials.reshape(grp.dim, grp.dim, *partials.shape[-2:])
 
         div = actx.einsum(
-            "xrej,xrej->ej",
+            'xrej,xrej->ej',
             ijm,
             partials,
-            arg_names=("inv_jac_mat", "partials",),
+            arg_names=("inv_jac_t", "partials"),
             tagged=(FirstAxisIsElementsTag(),)
         )
 
-        # }}}
-
         return div
-
     # }}}
 
 
@@ -516,7 +534,7 @@ def _divergence_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec
     per_group_divs = [
 
         compute_tensor_product_div(actx, in_grp, get_diff_mat, vec_i, ijm_i)
-        if isinstance(in_grp, TensorProductElementGroupBase)
+        if isinstance(in_grp, TensorProductElementGroup)
 
         # r for rst axis
         # x for xyz axis
@@ -545,7 +563,7 @@ def _reference_derivative_matrices(actx: ArrayContext,
         actx, _reference_derivative_matrices,
         lambda grp: grp.discretization_key())
     def get_ref_derivative_mats(grp):
-        if isinstance(grp, TensorProductElementGroupBase):
+        if isinstance(grp, TensorProductElementGroup):
             import modepy as mp
             import numpy.linalg as la
 
@@ -565,13 +583,18 @@ def _reference_derivative_matrices(actx: ArrayContext,
                                 1: DiscretizationDOFAxisTag()},
                                 diff_mat)))
 
-        else:
+        elif isinstance(grp, SimplexElementGroup):
             from meshmode.discretization.poly_element import diff_matrices
             return actx.freeze(
                     actx.tag_axis(
                         1, DiscretizationDOFAxisTag(),
                         actx.from_numpy(
                             np.asarray(diff_matrices(grp)))))
+
+        else:
+            raise TypeError("grp must be either a TensorProductElementGroup or"
+                            f" a SimplexElementGroup. Found {grp}")
+
     return get_ref_derivative_mats(out_element_group)
 
 
@@ -744,7 +767,7 @@ def _reference_stiffness_transpose_matrices(
 
             # {{{ tensor product case
 
-            if isinstance(out_grp, TensorProductElementGroupBase):
+            if isinstance(out_grp, TensorProductElementGroup):
                 import modepy as mp
                 import numpy.linalg as la
 
@@ -755,22 +778,24 @@ def _reference_stiffness_transpose_matrices(
                 vdm = mp.vandermonde(basis_1d.functions, nodes_1d)
                 vdm_p = mp.vandermonde(basis_1d.gradients, nodes_1d)[0]
 
-                mass_1D = la.inv(vdm @ vdm.T)
+                mass_1d = la.inv(vdm @ vdm.T)
                 diff_mat = la.solve(vdm.T, vdm_p.T).T
 
-                stiff_1D = actx.freeze(
+                stiff_1d = actx.freeze(
                         actx.tag_axis(1, DiscretizationDOFAxisTag(),
                                       actx.from_numpy(
                                       np.asarray(
-                                          diff_mat.T @ mass_1D.T))))
+                                          diff_mat.T @ mass_1d.T))))
 
-                mass_1D = actx.freeze(
-                        actx.tag_axis(1, DiscretizationDOFAxisTag(),
-                                      actx.from_numpy(
-                                          np.asarray(
-                                              mass_1D))))
+                from grudge.array_context import MassMatrix1d
+                mass_1d = actx.freeze(
+                    actx.tag_axis(
+                        1, (DiscretizationDOFAxisTag(),),
+                        actx.from_numpy(np.asarray(mass_1d)))
+                )
+                mass_1d = actx.tag(MassMatrix1d(), mass_1d)
 
-                return (stiff_1D, mass_1D)
+                return (stiff_1d, mass_1d)
 
             # }}}
 
@@ -803,6 +828,7 @@ def _reference_stiffness_transpose_matrices(
                 ).copy()  # contigify the array
             )
         )
+
     return get_ref_stiffness_transpose_mat(out_element_group,
                                            in_element_group)
 
@@ -1113,14 +1139,31 @@ def reference_inverse_mass_matrix(actx: ArrayContext, element_group):
         lambda grp: grp.discretization_key())
     def get_ref_inv_mass_mat(grp):
         from modepy import inverse_mass_matrix
-        basis = grp.basis_obj()
 
-        return actx.freeze(
-            actx.tag_axis(0, DiscretizationDOFAxisTag(),
-                actx.from_numpy(
-                    np.asarray(
-                        inverse_mass_matrix(basis.functions, grp.unit_nodes),
-                        order="C"))))
+        if isinstance(grp, TensorProductElementGroup):
+            basis_1d = grp.bases_1d()
+            nodes_1d = grp.unit_nodes_1d
+            inv_mass_1d = inverse_mass_matrix(basis_1d.functions, nodes_1d)
+
+            from grudge.array_context import InverseMassMatrix1d
+            inv_mass_1d = actx.tag_axis(0, DiscretizationDOFAxisTag(),
+                                        actx.from_numpy(np.asarray(inv_mass_1d)))
+            inv_mass_1d = actx.freeze(
+                actx.tag(InverseMassMatrix1d(), inv_mass_1d))
+
+            return inv_mass_1d
+        elif isinstance(grp, SimplexElementGroup):
+            basis = grp.basis_obj()
+
+            return actx.freeze(
+                actx.tag_axis(0, DiscretizationDOFAxisTag(),
+                    actx.from_numpy(
+                        np.asarray(
+                            inverse_mass_matrix(basis.functions, grp.unit_nodes),
+                            order="C"))))
+        else:
+            raise TypeError("grp must be either a TensorProductElementGroup or"
+                            f" a SimplexElementGroup. Found {grp}")
 
     return get_ref_inv_mass_mat(element_group)
 
@@ -1145,15 +1188,50 @@ def _apply_inverse_mass_operator(
     discr = dcoll.discr_from_dd(dd_in)
     inv_area_elements = 1./area_element(actx, dcoll, dd=dd_in,
             _use_geoderiv_connection=actx.supports_nonscalar_broadcasting)
+
+
+    def apply_to_tensor_product_elements(grp, jac_inv, vec, ref_inv_mass):
+
+        vec = fold(grp.space, vec)
+
+        for xyz_axis in range(grp.dim):
+            vec = single_axis_operator_application(
+                actx, grp.dim, ref_inv_mass, xyz_axis, vec,
+                tags=(FirstAxisIsElementsTag(),
+                      OutputIsTensorProductDOFArrayOrdered(),),
+                arg_names=("ref_inv_mass_1d", "vec"))
+
+        vec = unfold(grp.space, vec)
+
+        return actx.einsum(
+            "ei,ei->ei",
+            jac_inv,
+            vec,
+            tagged=(FirstAxisIsElementsTag(),)
+        )
+
+
+    def apply_to_simplicial_elements(jac_inv, vec, ref_inv_mass):
+
+        # Based on https://arxiv.org/pdf/1608.03836.pdf
+        # true_Minv ~ ref_Minv * ref_M * (1/jac_det) * ref_Minv
+        return actx.einsum(
+            "ei,ij,ej->ei",
+            jac_inv,
+            ref_inv_mass,
+            vec,
+            tagged=(FirstAxisIsElementsTag(),))
+
+
     group_data = [
-            # Based on https://arxiv.org/pdf/1608.03836.pdf
-            # true_Minv ~ ref_Minv * ref_M * (1/jac_det) * ref_Minv
-            actx.einsum("ei,ij,ej->ei",
-                        jac_inv,
-                        reference_inverse_mass_matrix(actx, element_group=grp),
-                        vec_i,
-                        tagged=(FirstAxisIsElementsTag(),))
-            for grp, jac_inv, vec_i in zip(discr.groups, inv_area_elements, vec)]
+        apply_to_tensor_product_elements(
+            grp, jac_inv, vec_i,
+            reference_inverse_mass_matrix(actx, element_group=grp))
+        if isinstance(grp, TensorProductElementGroup) else
+        apply_to_simplicial_elements(jac_inv, vec_i,
+            reference_inverse_mass_matrix(actx, element_group=grp))
+        for grp, jac_inv, vec_i in zip(discr.groups, inv_area_elements, vec)
+    ]
 
     return DOFArray(actx, data=tuple(group_data))
 
@@ -1396,6 +1474,32 @@ def face_mass(dcoll: DiscretizationCollection, *args) -> ArrayOrContainer:
         raise TypeError("invalid number of arguments")
 
     return _apply_face_mass_operator(dcoll, dd_in, vec)
+
+# }}}
+
+
+# {{{ general single axis operator application
+
+def single_axis_operator_application(actx, dim, operator, axis, data,
+                                     arg_names=None, tags=None):
+    """
+    Used for applying 1D operators to a single axis of a tensor of DOF data.
+    """
+
+    if not isinstance(arg_names, tuple):
+        raise TypeError("arg_names must be a tuple.")
+    if not isinstance(tags, tuple):
+        raise TypeError("arg_names must be a tuple.")
+
+    operator_spec = 'ij'
+    data_spec = f'e{"abcdefghklm"[:axis]}j{"nopqrstuvwxyz"[:dim-axis-1]}'
+    out_spec = f'e{"abcdefghklm"[:axis]}i{"nopqrstuvwxyz"[:dim-axis-1]}'
+
+    spec = operator_spec + ',' + data_spec + '->' + out_spec
+
+    return actx.einsum(spec, operator, data,
+                       arg_names=arg_names,
+                       tagged=tags)
 
 # }}}
 
