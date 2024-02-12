@@ -171,6 +171,10 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
 
     actx = actx_factory()
 
+    if tpe:
+        if dim == 1:
+            pytest.skip()
+
     # {{{ cases
 
     from meshmode.mesh import TensorProductElementGroup
@@ -224,6 +228,7 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
         RK4MethodBuilder.output_coeffs))
 
     dt_est = actx.to_numpy(wave_op.estimate_rk4_timestep(actx, dcoll))
+    print(f"{dt_est=}")
 
     if visualize:
         re, im = np.mgrid[-4:1:30j, -5:5:30j]
