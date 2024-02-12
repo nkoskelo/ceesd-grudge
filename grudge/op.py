@@ -347,14 +347,6 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
                         arg_names=("stiff_1d", f"vec_{xyz_axis}"))
                 )
 
-                # apply metric terms
-                grad[xyz_axis] = actx.einsum(
-                    'rej,ej->ej',
-                    ijm[xyz_axis],
-                    grad[xyz_axis],
-                    tagged=(FirstAxisIsElementsTag(),),
-                    arg_names=("inv_jac_t", f"vec_{xyz_axis}")
-                )
         else:
             diff_mat = get_diff_mat(actx, grp, grp)
 
@@ -371,15 +363,14 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
                     )
                 )
 
-                grad[xyz_axis] = actx.einsum(
-                    "rej,ej->ej",
-                    ijm[xyz_axis],
-                    grad[xyz_axis],
-                    tagged=(FirstAxisIsElementsTag(),),
-                    arg_names=("inv_jac_t", f"vec_{xyz_axis}")
-                )
-
-        return make_obj_array(grad)
+        grad = actx.np.stack(grad)
+        return actx.einsum(
+            "xrej,rej->xej",
+            ijm,
+            grad,
+            tagged=(FirstAxisIsElementsTag(),),
+            arg_names=("inv_jac_t", f"grad")
+        )
 
     # }}}
 
