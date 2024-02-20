@@ -72,6 +72,9 @@ from grudge.dof_desc import (
     DD_VOLUME_ALL, DOFDesc, DISCR_TAG_BASE
 )
 
+from meshmode.transform_metadata import (DiscretizationDOFAxisTag,
+                                         DiscretizationElementAxisTag)
+
 from meshmode.transform_metadata import (DiscretizationAmbientDimAxisTag,
                                          DiscretizationTopologicalDimAxisTag)
 
@@ -660,11 +663,11 @@ def area_element(
 
     @memoize_in(dcoll, (area_element, dd, _use_geoderiv_connection))
     def _area_elements():
-        result = actx.np.sqrt(
-            pseudoscalar(
-                actx, dcoll, dd=dd,
-                _use_geoderiv_connection=_use_geoderiv_connection).norm_squared())
-
+        res = pseudoscalar(
+            actx, dcoll, dd=dd, _use_geoderiv_connection=_use_geoderiv_connection
+        ).norm_squared()
+        result = actx.np.sqrt(tag_axes(actx, {0: DiscretizationElementAxisTag(),
+                                              1: DiscretizationDOFAxisTag()}, res))
         return actx.freeze(
                 actx.tag(NameHint(f"area_el_{dd.as_identifier()}"), result))
 
