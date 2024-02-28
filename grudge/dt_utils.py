@@ -272,8 +272,11 @@ def dt_geometric_factors(
     volm_discr = dcoll.discr_from_dd(dd)
 
     r_fac = dcoll.dim
-    if any(not isinstance(grp, SimplexElementGroupBase)
-           for grp in volm_discr.groups):
+    # assumes !simplex = tpe
+    tpe = any(not isinstance(grp, SimplexElementGroupBase)
+              fro grp in volm_discr.groups)
+
+    if tpe:  # old way: use average face area
         r_fac = 2.0*r_fac
 
     if volm_discr.dim != volm_discr.ambient_dim:
@@ -301,52 +304,74 @@ def dt_geometric_factors(
         op.elementwise_integral(
             dcoll, dd_face, face_discr.zeros(actx) + 1.0
         )
-    )
+    }
 
-    if actx.supports_nonscalar_broadcasting:
-        # Compute total surface area of an element by summing over the
-        # individual face areas
-        surface_areas = DOFArray(
-            actx,
-            data=tuple(
-                actx.einsum(
-                    "fej->e",
-                    tag_axes(actx, {
-                        0: DiscretizationFaceAxisTag(),
-                        1: DiscretizationElementAxisTag(),
-                        2: DiscretizationDOFAxisTag()
+    if tpe:
+        # Reshape from (nelements*nfaces, 1) to (nfaces, nelements, 1)
+        # to get per-element data
+        node_data_per_group = []
+        for igrp, group in enumerate(volm_discr.mesh.groups):
+            nelements = group.nelements
+            nfaces = group.nfaces
+            el_face_areas = face_areas[igrp].reshape(nfaces, nelements,
+                                                     face_areas[igrp].shape[1])
+            if actx.supports_nonscalar_broadcasting:
+                el_data = actx.np.max(el_face_areas, axis=0)[:, 0:1]
+                node_data = actx.np.broadcast_to(
+                    el_data, dcoll.zeros(actx, dd=dd)[igrp].shape)
+            else:
+                el_data_np = np.max(actx.to_numpy(el_face_areas), axis=0)[:, 0:1]
+                node_data_np = np.ascontiguousarray(
+                    np.broadcast_to(el_data_np, dcoll.zeros(actx, dd=dd)[igrp].shape))
+                node_data = actx.from_numpy(node_data_np)
+
+            node_data_per_group.append(node_data)
+        surface_areas = rfac * DOFArray(actx, node_data_per_group)
+
+    else:
+        if actx.supports_nonscalar_broadcasting:
+            # Compute total surface area of an element by summing over the
+            # individual face areas
+            surface_areas = DOFArray(
+                actx,
+                data=tuple(
+                    actx.einsum(
+                        "fej->e",
+                        tag_axes(actx, {
+                            0: DiscretizationFaceAxisTag(),
+                            1: DiscretizationElementAxisTag(),
+                            2: DiscretizationDOFAxisTag()
                         },
+                                 face_ae_i.reshape(
+                                     vgrp.mesh_el_group.nfaces,
+                                     vgrp.nelements,
+                                     face_ae_i.shape[-1])),
+                        tagged=(FirstAxisIsElementsTag(),))
+                    for vgrp, face_ae_i in zip(volm_discr.groups, face_areas)))
+        else:
+            surface_areas = DOFArray(
+                actx,
+                data=tuple(
+                    # NOTE: Whenever the array context can't perform nonscalar
+                    # broadcasting, elementwise reductions
+                    # (like `elementwise_integral`) repeat the *same* scalar value of
+                    # the reduction at each degree of freedom. To get a single
+                    # value for the face area (per face),
+                    # we simply average over the nodes, which gives the desired result.
+                    actx.einsum(
+                    "fej->e",
                         face_ae_i.reshape(
                             vgrp.mesh_el_group.nfaces,
                             vgrp.nelements,
-                            face_ae_i.shape[-1])),
+                            face_ae_i.shape[-1]
+                        ) / afgrp.nunit_dofs,
                     tagged=(FirstAxisIsElementsTag(),))
 
-                for vgrp, face_ae_i in zip(volm_discr.groups, face_areas)))
-    else:
-        surface_areas = DOFArray(
-            actx,
-            data=tuple(
-                # NOTE: Whenever the array context can't perform nonscalar
-                # broadcasting, elementwise reductions
-                # (like `elementwise_integral`) repeat the *same* scalar value of
-                # the reduction at each degree of freedom. To get a single
-                # value for the face area (per face),
-                # we simply average over the nodes, which gives the desired result.
-                actx.einsum(
-                    "fej->e",
-                    face_ae_i.reshape(
-                        vgrp.mesh_el_group.nfaces,
-                        vgrp.nelements,
-                        face_ae_i.shape[-1]
-                    ) / afgrp.nunit_dofs,
-                    tagged=(FirstAxisIsElementsTag(),))
-
-                for vgrp, afgrp, face_ae_i in zip(volm_discr.groups,
-                                                  face_discr.groups,
-                                                  face_areas)
+                    for vgrp, afgrp, face_ae_i in zip(volm_discr.groups,
+                                                      face_discr.groups,
+                                                      face_areas)
+                )
             )
-        )
 
     return actx.freeze(
             actx.tag(NameHint(f"dt_geometric_{dd.as_identifier()}"),
