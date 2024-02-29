@@ -322,29 +322,18 @@ def dt_geometric_factors(
                         axis=0)
                     for vgrp, face_ae_i in zip(volm_discr.groups, face_areas)))
         else:
-            surface_areas = DOFArray(
-                actx,
-                data=tuple(
-                    # NOTE: Whenever the array context can't perform nonscalar
-                    # broadcasting, elementwise reductions
-                    # (like `elementwise_integral`) repeat the *same* scalar value of
-                    # the reduction at each degree of freedom. To get a single
-                    # value for the face area (per face),
-                    # we simply average over the nodes, which gives the desired result.
-                    actx.einsum(
-                    "fej->e",
-                        face_ae_i.reshape(
-                            vgrp.mesh_el_group.nfaces,
-                            vgrp.nelements,
-                            face_ae_i.shape[-1]
-                        ) / afgrp.nunit_dofs,
-                    tagged=(FirstAxisIsElementsTag(),))
-
-                    for vgrp, afgrp, face_ae_i in zip(volm_discr.groups,
-                                                      face_discr.groups,
-                                                      face_areas)
-                )
-            )
+            el_data_per_group = []
+            for igrp, group in enumerate(volm_discr.mesh.groups):
+                nelements = group.nelements
+                nfaces = group.nfaces
+                el_face_data = face_areas[igrp].reshape(nfaces, nelements,
+                                                       face_areas[igrp].shape[1])
+                el_data_np = np.ascontiguousarray(
+                    np.max(actx.to_numpy(el_face_data), axis=0)[:, 0:1])
+                el_data = actx.from_numpy(el_data_np)
+                el_data = el_data.reshape(nelements)
+                el_data_per_group.append(el_data)
+            surface_areas = DOFArray(actx, tuple(el_data_per_group))
     else:
         if actx.supports_nonscalar_broadcasting:
             # Compute total surface area of an element by summing over the
