@@ -305,7 +305,7 @@ def dt_geometric_factors(
             dcoll, dd_face, face_discr.zeros(actx) + 1.0
         )
     )
-    print(f"{face_areas=}")
+
     if tpe:
         if actx.supports_nonscalar_broadcasting:
             surface_areas = r_fac * DOFArray(
@@ -333,7 +333,7 @@ def dt_geometric_factors(
                 el_data = actx.from_numpy(el_data_np)
                 el_data = el_data.reshape(nelements)
                 el_data_per_group.append(el_data)
-            surface_areas = DOFArray(actx, tuple(el_data_per_group))
+            surface_areas = r_fac * DOFArray(actx, tuple(el_data_per_group))
     else:
         if actx.supports_nonscalar_broadcasting:
             # Compute total surface area of an element by summing over the
