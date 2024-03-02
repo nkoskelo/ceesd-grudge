@@ -271,13 +271,11 @@ def dt_geometric_factors(
     actx = dcoll._setup_actx
     volm_discr = dcoll.discr_from_dd(dd)
 
-    r_fac = dcoll.dim
     # assumes !simplex = tpe
     tpe = any(not isinstance(grp, SimplexElementGroupBase)
               for grp in volm_discr.groups)
 
-    if tpe:  # old way: use average face area
-        r_fac = 2.0*r_fac
+    r_fac = 1.0 if tpe else dcoll.dim
 
     if volm_discr.dim != volm_discr.ambient_dim:
         from warnings import warn
@@ -308,7 +306,7 @@ def dt_geometric_factors(
 
     if tpe:
         if actx.supports_nonscalar_broadcasting:
-            surface_areas = r_fac * DOFArray(
+            surface_areas = DOFArray(
                 actx,
                 data=tuple(
                     actx.np.max(
@@ -333,12 +331,12 @@ def dt_geometric_factors(
                 el_data = actx.from_numpy(el_data_np)
                 el_data = el_data.reshape(nelements)
                 el_data_per_group.append(el_data)
-            surface_areas = r_fac * DOFArray(actx, tuple(el_data_per_group))
+            surface_areas = DOFArray(actx, tuple(el_data_per_group))
     else:
         if actx.supports_nonscalar_broadcasting:
             # Compute total surface area of an element by summing over the
             # individual face areas
-            surface_areas = r_fac * DOFArray(
+            surface_areas = DOFArray(
                 actx,
                 data=tuple(
                     actx.einsum(
