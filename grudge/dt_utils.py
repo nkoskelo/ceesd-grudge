@@ -275,7 +275,7 @@ def dt_geometric_factors(
     tpe = any(not isinstance(grp, SimplexElementGroupBase)
               for grp in volm_discr.groups)
 
-    r_fac = 1.0 if tpe else dcoll.dim
+    r_fac = 0.5 if tpe else dcoll.dim
 
     if volm_discr.dim != volm_discr.ambient_dim:
         from warnings import warn

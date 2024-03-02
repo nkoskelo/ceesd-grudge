@@ -258,6 +258,70 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
     assert not stable_dt_factors or max(stable_dt_factors) < 1.5, stable_dt_factors
 
 
+@pytest.mark.parametrize("dim", [2])
+@pytest.mark.parametrize("degree", [1, 2])
+@pytest.mark.parametrize("tpe", [True])
+def test_charlen(actx_factory, dim, degree, tpe, visualize=False):
+
+    from grudge.dt_utils import (
+        dt_geometric_factors,
+        dt_non_geometric_factors,
+        h_min_from_volume,
+        h_max_from_volume
+    )
+    actx = actx_factory()
+
+    if tpe:
+        if dim == 1:
+            pytest.skip()
+
+    # {{{ cases
+
+    from meshmode.mesh import TensorProductElementGroup
+    group_cls = TensorProductElementGroup if tpe else None
+
+    import meshmode.mesh.generation as mgen
+
+    a = [0, 0, 0]
+    b = [1, 1, 1]
+    nels1d = [2, 3, 4]
+
+    for nel1d in nels1d:
+        print(f"{dim=},{nel1d=},{degree=}")
+        mesh = mgen.generate_regular_rect_mesh(
+            a=a[:dim], b=b[:dim],
+            nelements_per_axis=(nel1d,)*dim,
+            group_cls=group_cls)
+        print(f"{mesh=}")
+        assert mesh.dim == dim
+
+        from meshmode.discretization.poly_element import \
+            LegendreGaussLobattoTensorProductGroupFactory as Lgl
+
+        from grudge.dof_desc import DISCR_TAG_BASE
+        order = degree
+        dtag_to_grp_fac = None
+        if tpe:
+            order = None
+            dtag_to_grp_fac = {
+                DISCR_TAG_BASE: Lgl(degree)
+            }
+        
+        dcoll = DiscretizationCollection(actx, mesh, order=order,
+                                         discr_tag_to_group_factory=dtag_to_grp_fac)
+
+        h_min = actx.to_numpy(h_min_from_volume(dcoll))
+        h_max = actx.to_numpy(h_max_from_volume(dcoll))
+        gfac = actx.to_numpy(dt_geometric_factors(dcoll))
+        ngfac = dt_non_geometric_factors(dcoll)
+
+        print(f"{h_min=}")
+        print(f"{h_max=}")
+        print(f"{gfac=}")
+        print(f"{ngfac=}")
+
+    assert False
+
 # You can test individual routines by typing
 # $ python test_grudge.py 'test_routine()'
 
