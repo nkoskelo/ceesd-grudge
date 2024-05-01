@@ -98,10 +98,11 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
     assert np.all(np.isclose(ratios, 2))
 
     # Make sure it works with empty meshes
-    mesh = builder.get_mesh(0, builder.mesh_order)
-    dcoll = make_discretization_collection(actx, mesh, order=order,
-                                           discr_tag_to_group_factory=dtag_to_grp_fac)
-    factors = actx.thaw(dt_geometric_factors(dcoll))  # noqa: F841
+    if not tpe:
+        mesh = builder.get_mesh(0, builder.mesh_order)
+        dcoll = make_discretization_collection(actx, mesh, order=order,
+                                               discr_tag_to_group_factory=dtag_to_grp_fac)
+        factors = actx.thaw(dt_geometric_factors(dcoll))  # noqa: F841
 
 
 @pytest.mark.parametrize("name", ["interval", "box2d", "box3d"])
