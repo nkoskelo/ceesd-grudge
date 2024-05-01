@@ -33,7 +33,7 @@ pytest_generate_tests = pytest_generate_tests_for_array_contexts(
         [PytestPyOpenCLArrayContextFactory,
          PytestPytatoPyOpenCLArrayContextFactory])
 
-from grudge import DiscretizationCollection
+from grudge import make_discretization_collection
 
 import grudge.op as op
 
@@ -84,8 +84,8 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
     min_factors = []
     for resolution in builder.resolutions:
         mesh = builder.get_mesh(resolution, builder.mesh_order)
-        dcoll = DiscretizationCollection(actx, mesh, order=order,
-                                         discr_tag_to_group_factory=dtag_to_grp_fac)
+        dcoll = make_discretization_collection(actx, mesh, order=order,
+                                               discr_tag_to_group_factory=dtag_to_grp_fac)
         min_factors.append(
             actx.to_numpy(
                 op.nodal_min(dcoll, "vol", actx.thaw(dt_geometric_factors(dcoll))))
@@ -99,8 +99,8 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
 
     # Make sure it works with empty meshes
     mesh = builder.get_mesh(0, builder.mesh_order)
-    dcoll = DiscretizationCollection(actx, mesh, order=order,
-                                     discr_tag_to_group_factory=dtag_to_grp_fac)
+    dcoll = make_discretization_collection(actx, mesh, order=order,
+                                           discr_tag_to_group_factory=dtag_to_grp_fac)
     factors = actx.thaw(dt_geometric_factors(dcoll))  # noqa: F841
 
 
@@ -130,7 +130,7 @@ def test_non_geometric_factors(actx_factory, name):
     degrees = list(range(1, 8))
     for degree in degrees:
         mesh = builder.get_mesh(1, degree)
-        dcoll = DiscretizationCollection(actx, mesh, order=degree)
+        dcoll = make_discretization_collection(actx, mesh, order=degree)
         factors.append(min(dt_non_geometric_factors(dcoll)))
 
     # Crude estimate, factors should behave like 1/N**2
@@ -149,7 +149,7 @@ def test_build_jacobian(actx_factory):
     mesh = mgen.generate_regular_rect_mesh(a=[0], b=[1], nelements_per_axis=(3,))
     assert mesh.dim == 1
 
-    dcoll = DiscretizationCollection(actx, mesh, order=1)
+    dcoll = make_discretization_collection(actx, mesh, order=1)
 
     def rhs(x):
         return 3*x**2 + 2*x + 5
@@ -202,7 +202,7 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
         dtag_to_grp_fac = {
             DISCR_TAG_BASE: Lgl(degree)
         }
-    dcoll = DiscretizationCollection(actx, mesh, order=order,
+    dcoll = make_discretization_collection(actx, mesh, order=order,
                                      discr_tag_to_group_factory=dtag_to_grp_fac)
 
     from grudge.models.wave import WeakWaveOperator
@@ -307,7 +307,7 @@ def test_charlen(actx_factory, dim, degree, tpe, visualize=False):
                 DISCR_TAG_BASE: Lgl(degree)
             }
         
-        dcoll = DiscretizationCollection(actx, mesh, order=order,
+        dcoll = make_discretization_collection(actx, mesh, order=order,
                                          discr_tag_to_group_factory=dtag_to_grp_fac)
 
         h_min = actx.to_numpy(h_min_from_volume(dcoll))
