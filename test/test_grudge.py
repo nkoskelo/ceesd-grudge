@@ -23,10 +23,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from meshmode.mesh import TensorProductElementGroup
 import numpy as np
 import numpy.linalg as la
 
+from meshmode.discretization.poly_element import \
+    InterpolatoryEdgeClusteredGroupFactory
+from meshmode.mesh import TensorProductElementGroup
 from grudge.array_context import PytestPyOpenCLArrayContextFactory
 from arraycontext import pytest_generate_tests_for_array_contexts
 
@@ -349,7 +351,7 @@ def test_face_normal_surface(actx_factory, mesh_name):
                 dof_desc.FACE_RESTR_INTERIOR, dof_desc.VTAG_ALL)
             )(face_normal_i)
 
-    if mesh.ambient_dim == 3:
+    if ambient_dim == 3:
         from grudge.geometry import pseudoscalar, area_element
         # NOTE: there's only one face tangent in 3d
         face_tangent = (
@@ -430,11 +432,15 @@ def test_tri_diff_mat(actx_factory, dim, order=4):
 
 # {{{ divergence theorem
 
-@pytest.mark.parametrize("case", ["circle", "tp_box2", "tp_box3", "gh-403"])
+@pytest.mark.parametrize(
+             "case", ["circle", "tp_box2", "tp_box3", "gh-403", "gh-339"])
 def test_gauss_theorem(actx_factory, case, visualize=False):
     """Verify Gauss's theorem explicitly on a mesh"""
 
     pytest.importorskip("meshpy")
+
+    order = 2
+    use_overint = False
 
     if case == "circle":
         from meshpy.geometry import make_circle, GeometryBuilder
@@ -455,6 +461,13 @@ def test_gauss_theorem(actx_factory, case, visualize=False):
         from meshmode.mesh.io import read_gmsh
         mesh = read_gmsh("gh-403.msh")
 
+    elif case == "gh-339":
+        # https://github.com/inducer/grudge/issues/339
+        from meshmode.mesh.io import read_gmsh
+        mesh = read_gmsh("gh-339.msh")
+        order = 1
+        use_overint = True
+
     elif case.startswith("tp_box"):
         dim = int(case[-1])
         mesh = mgen.generate_regular_rect_mesh(
@@ -467,10 +480,17 @@ def test_gauss_theorem(actx_factory, case, visualize=False):
         raise ValueError(f"unknown case: {case}")
 
     from meshmode.mesh import BTAG_ALL
+    from meshmode.discretization.poly_element import QuadratureGroupFactory
 
     actx = actx_factory()
 
-    dcoll = make_discretization_collection(actx, mesh, order=2)
+    dcoll = make_discretization_collection(
+               actx, mesh, discr_tag_to_group_factory={
+                   dof_desc.DISCR_TAG_BASE: (
+                       InterpolatoryEdgeClusteredGroupFactory(order)),
+                   dof_desc.DISCR_TAG_QUAD: (
+                       QuadratureGroupFactory(order))
+               })
     volm_disc = dcoll.discr_from_dd(dof_desc.DD_VOLUME_ALL)
     x_volm = actx.thaw(volm_disc.nodes())
 
@@ -490,13 +510,31 @@ def test_gauss_theorem(actx_factory, case, visualize=False):
         )[:dcoll.ambient_dim]
 
     f_volm = f(x_volm)
-    div_f = op.local_div(dcoll, f_volm)
-    int_1 = op.integral(dcoll, "vol", div_f)
 
-    prj_f = op.project(dcoll, "vol", BTAG_ALL, f_volm)
-    normal = geo.normal(actx, dcoll, BTAG_ALL)
-    f_dot_n = prj_f.dot(normal)
-    int_2 = op.integral(dcoll, BTAG_ALL, f_dot_n)
+    if not use_overint:
+        div_f = op.local_div(dcoll, f_volm)
+        int_1 = op.integral(dcoll, "vol", div_f)
+
+        prj_f = op.project(dcoll, "vol", BTAG_ALL, f_volm)
+        normal = geo.normal(actx, dcoll, BTAG_ALL)
+        f_dot_n = prj_f.dot(normal)
+        int_2 = op.integral(dcoll, BTAG_ALL, f_dot_n)
+    else:
+        dd_base_vol = dof_desc.as_dofdesc(
+                            dof_desc.DTAG_VOLUME_ALL, dof_desc.DISCR_TAG_BASE)
+        dd_quad_vol = dof_desc.as_dofdesc(
+                            dof_desc.DTAG_VOLUME_ALL, dof_desc.DISCR_TAG_QUAD)
+        dd_quad_bd = dof_desc.as_dofdesc(BTAG_ALL, dof_desc.DISCR_TAG_QUAD)
+
+        div_f = op.local_div(
+                 dcoll, dd_quad_vol,
+                 op.project(dcoll, dd_base_vol, dd_quad_vol, f_volm))
+        int_1 = op.integral(dcoll, dd_quad_vol, div_f)
+
+        prj_f = op.project(dcoll, "vol", dd_quad_bd, f_volm)
+        normal = geo.normal(actx, dcoll, dd_quad_bd)
+        f_dot_n = prj_f.dot(normal)
+        int_2 = op.integral(dcoll, dd_quad_bd, f_dot_n)
 
     if visualize:
         from grudge.shortcuts import make_visualizer, make_boundary_visualizer
@@ -884,6 +922,8 @@ def test_convergence_maxwell(actx_factory,  order):
 
         logger.info("dt %.5e nsteps %5d", dt, nsteps)
 
+        esc = None
+
         step = 0
         for event in dt_stepper.run(t_end=final_t):
             if isinstance(event, dt_stepper.StateComputed):
@@ -1045,6 +1085,8 @@ def test_norm_real(actx_factory, p):
         ref_norm = (1/3)**0.5
     elif p == np.inf:
         ref_norm = 1
+    else:
+        raise AssertionError("unsupported p")
 
     logger.info("norm: %.5e %.5e", norm, ref_norm)
     assert abs(norm-ref_norm) / abs(ref_norm) < 1e-13
@@ -1066,6 +1108,8 @@ def test_norm_complex(actx_factory, p):
         ref_norm = (2/3)**0.5
     elif p == np.inf:
         ref_norm = 2**0.5
+    else:
+        raise AssertionError("unsupported p")
 
     logger.info("norm: %.5e %.5e", norm, ref_norm)
     assert abs(norm-ref_norm) / abs(ref_norm) < 1e-13
@@ -1088,6 +1132,8 @@ def test_norm_obj_array(actx_factory, p):
         ref_norm = (dim/3)**0.5
     elif p == np.inf:
         ref_norm = 1
+    else:
+        raise AssertionError("unsupported p")
 
     logger.info("norm: %.5e %.5e", norm, ref_norm)
     assert abs(norm-ref_norm) / abs(ref_norm) < 1e-14
