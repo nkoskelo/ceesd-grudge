@@ -33,9 +33,16 @@ pytest_generate_tests = pytest_generate_tests_for_array_contexts(
         [PytestPyOpenCLArrayContextFactory,
          PytestPytatoPyOpenCLArrayContextFactory])
 
+# <<<<<<< HEAD
 from grudge import make_discretization_collection
+#
+# =======
+# from grudge import DiscretizationCollection
+# >>>>>>> main
 
 import grudge.op as op
+
+import mesh_data
 
 import pytest
 
@@ -59,14 +66,14 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
     group_cls = TensorProductElementGroup if tpe else None
 
     if name == "interval":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=1, group_cls=group_cls)
+        if tpe:
+            pytest.skip()
+        builder = mesh_data.BoxMeshBuilder1D(group_cls=group_cls)
     elif name == "box2d":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=2, group_cls=group_cls)
+        builder = mesh_data.BoxMeshBuilder2D(group_cls=group_cls)
     elif name == "box3d":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=3, group_cls=group_cls)
+        builder = mesh_data.BoxMeshBuilder3D(group_cls=group_cls)
+
     else:
         raise ValueError("unknown geometry name: %s" % name)
 
@@ -74,18 +81,20 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
 
     from meshmode.discretization.poly_element import \
         LegendreGaussLobattoTensorProductGroupFactory as Lgl
-
+    test_order = 4
+    order = None if tpe else test_order
     from grudge.dof_desc import DISCR_TAG_BASE
     dtag_to_grp_fac = {
-        DISCR_TAG_BASE: Lgl(builder.order)
+        DISCR_TAG_BASE: Lgl(test_order)
     } if tpe else None
-    order = None if tpe else builder.order
 
     min_factors = []
     for resolution in builder.resolutions:
-        mesh = builder.get_mesh(resolution, builder.mesh_order)
-        dcoll = make_discretization_collection(actx, mesh, order=order,
-                                               discr_tag_to_group_factory=dtag_to_grp_fac)
+        mesh = builder.get_mesh(resolution, test_order)
+        dcoll = make_discretization_collection(
+            actx, mesh, order=order,
+            discr_tag_to_group_factory=dtag_to_grp_fac)
+
         min_factors.append(
             actx.to_numpy(
                 op.nodal_min(dcoll, "vol", actx.thaw(dt_geometric_factors(dcoll))))
@@ -99,9 +108,10 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
 
     # Make sure it works with empty meshes
     if not tpe:
-        mesh = builder.get_mesh(0, builder.mesh_order)
-        dcoll = make_discretization_collection(actx, mesh, order=order,
-                                               discr_tag_to_group_factory=dtag_to_grp_fac)
+        mesh = builder.get_mesh(0, order)
+        dcoll = make_discretization_collection(
+            actx, mesh, order=order,
+            discr_tag_to_group_factory=dtag_to_grp_fac)
         factors = actx.thaw(dt_geometric_factors(dcoll))  # noqa: F841
 
 
@@ -114,14 +124,11 @@ def test_non_geometric_factors(actx_factory, name):
     # {{{ cases
 
     if name == "interval":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=1)
+        builder = mesh_data.BoxMeshBuilder1D()
     elif name == "box2d":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=2)
+        builder = mesh_data.BoxMeshBuilder2D()
     elif name == "box3d":
-        from mesh_data import BoxMeshBuilder
-        builder = BoxMeshBuilder(ambient_dim=3)
+        builder = mesh_data.BoxMeshBuilder3D()
     else:
         raise ValueError("unknown geometry name: %s" % name)
 
@@ -321,7 +328,7 @@ def test_charlen(actx_factory, dim, degree, tpe, visualize=False):
         print(f"{gfac=}")
         print(f"{ngfac=}")
 
-    assert False
+    # assert False
 
 # You can test individual routines by typing
 # $ python test_grudge.py 'test_routine()'

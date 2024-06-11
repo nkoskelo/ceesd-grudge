@@ -1,35 +1,51 @@
+from abc import abstractmethod, ABC
+from typing import ClassVar, Hashable, Optional, Sequence
+from meshmode.mesh import Mesh
+from meshmode.mesh.io import read_gmsh
 import numpy as np
 import meshmode.mesh.generation as mgen
 
 
-class MeshBuilder:
-    order = 4
-    mesh_order = None
+class MeshBuilder(ABC):
+    resolutions: ClassVar[Sequence[Hashable]]
+    ambient_dim: ClassVar[int]
 
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+    @abstractmethod
+    def get_mesh(
+             self,
+             resolution: Hashable,
+             mesh_order: Optional[int] = None
+         ) -> Mesh:
+        ...
 
-        if self.mesh_order is None:
-            self.mesh_order = self.order
 
-    @property
-    def ambient_dim(self):
-        raise NotImplementedError
+class _GmshMeshBuilder(MeshBuilder):
+    resolutions = [None]
 
-    @property
-    def resolutions(self):
-        raise NotImplementedError
+    def __init__(self, filename: str) -> None:
+        self._mesh_fn = filename
 
-    def get_mesh(self, resolution, mesh_order):
-        raise NotImplementedError
+    def get_mesh(self, resolution, mesh_order=None) -> Mesh:
+        assert resolution is None
+        assert mesh_order is None
+        return read_gmsh(self._mesh_fn, force_ambient_dim=self.ambient_dim)
+
+
+class GmshMeshBuilder2D(_GmshMeshBuilder):
+    ambient_dim = 2
+
+
+class GmshMeshBuilder3D(_GmshMeshBuilder):
+    ambient_dim = 3
 
 
 class Curve2DMeshBuilder(MeshBuilder):
     ambient_dim = 2
     resolutions = [16, 32, 64, 128]
 
-    def get_mesh(self, resolution, mesh_order):
+    def get_mesh(self, resolution, mesh_order=None):
+        if mesh_order is None:
+            mesh_order = 4
         return mgen.make_curve_mesh(
                 self.curve_fn,      # pylint: disable=no-member
                 np.linspace(0.0, 1.0, resolution + 1),
@@ -37,8 +53,9 @@ class Curve2DMeshBuilder(MeshBuilder):
 
 
 class EllipseMeshBuilder(Curve2DMeshBuilder):
-    radius = 3.1
-    aspect_ratio = 2.0
+    def __init__(self, radius=3.1, aspect_ratio=2):
+        self.radius = radius
+        self.aspect_ratio = aspect_ratio
 
     @property
     def curve_fn(self):
@@ -58,9 +75,13 @@ class SphereMeshBuilder(MeshBuilder):
     ambient_dim = 3
 
     resolutions = [0, 1, 2, 3]
-    radius = 1.0
 
-    def get_mesh(self, resolution, mesh_order):
+    radius: float
+
+    def __init__(self, radius=1):
+        self.radius = radius
+
+    def get_mesh(self, resolution, mesh_order=4):
         from meshmode.mesh.generation import generate_sphere
         return generate_sphere(self.radius, order=mesh_order,
                 uniform_refinement_rounds=resolution)
@@ -69,13 +90,16 @@ class SphereMeshBuilder(MeshBuilder):
 class SpheroidMeshBuilder(MeshBuilder):
     ambient_dim = 3
 
-    mesh_order = 4
     resolutions = [0, 1, 2, 3]
 
-    radius = 1.0
-    aspect_ratio = 2.0
+    radius: float
+    aspect_ratio: float
 
-    def get_mesh(self, resolution, mesh_order):
+    def __init__(self, radius=1, aspect_ratio=2):
+        self.radius = radius
+        self.aspect_ratio = aspect_ratio
+
+    def get_mesh(self, resolution, mesh_order=4):
         from meshmode.mesh.generation import generate_sphere
         mesh = generate_sphere(self.radius, order=mesh_order,
                 uniform_refinement_rounds=resolution)
@@ -84,17 +108,26 @@ class SpheroidMeshBuilder(MeshBuilder):
         return affine_map(mesh, A=np.diag([1.0, 1.0, self.aspect_ratio]))
 
 
-class BoxMeshBuilder(MeshBuilder):
-    ambient_dim = 2
-    group_cls = None
+# <<<<<<< HEAD
+# class BoxMeshBuilder(MeshBuilder):
+#    ambient_dim = 2
+#    group_cls = None
+#
+#    mesh_order = 1
+#=======
+class _BoxMeshBuilderBase(MeshBuilder):
+    def __init__(self, resolutions=None, mesh_order=None,
+                 group_cls=None, ambient_dim=None):
+        self.resolutions = resolutions or [4, 8, 16]
+        self.mesh_order = mesh_order or 1
+        self.group_cls = group_cls
+        self.ambient_dim = ambient_dim or 3
+        self.a = (-0.5, -0.5, -0.5)
+        self.b = (+0.5, +0.5, +0.5)
 
-    mesh_order = 1
-    resolutions = [4, 8, 16]
-
-    a = (-0.5, -0.5, -0.5)
-    b = (+0.5, +0.5, +0.5)
-
-    def get_mesh(self, resolution, mesh_order):
+    def get_mesh(self, resolution, mesh_order=None):
+        if mesh_order is None:
+            mesh_order = self.mesh_order
         if not isinstance(resolution, (list, tuple)):
             resolution = (resolution,) * self.ambient_dim
 
@@ -105,12 +138,36 @@ class BoxMeshBuilder(MeshBuilder):
                 order=mesh_order)
 
 
+class BoxMeshBuilder1D(_BoxMeshBuilderBase):
+    def __init__(self, resolutions=None, mesh_order=None,
+                 group_cls=None, ambient_dim=None):
+        ambient_dim = 1
+        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
+                       group_cls=group_cls, ambient_dim=ambient_dim)
+
+
+class BoxMeshBuilder2D(_BoxMeshBuilderBase):
+    def __init__(self, resolutions=None, mesh_order=None,
+                 group_cls=None, ambient_dim=None):
+        ambient_dim = 2
+        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
+                       group_cls=group_cls, ambient_dim=ambient_dim)
+
+
+class BoxMeshBuilder3D(_BoxMeshBuilderBase):
+    def __init__(self, resolutions=None, mesh_order=None,
+                 group_cls=None, ambient_dim=None):
+        ambient_dim = 3
+        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
+                       group_cls=group_cls, ambient_dim=ambient_dim )
+
+
 class WarpedRectMeshBuilder(MeshBuilder):
     resolutions = [4, 6, 8]
 
     def __init__(self, dim):
         self.dim = dim
 
-    def get_mesh(self, resolution, mesh_order):
+    def get_mesh(self, resolution, mesh_order=4):
         return mgen.generate_warped_rect_mesh(
                 dim=self.dim, order=4, nelements_side=6)
