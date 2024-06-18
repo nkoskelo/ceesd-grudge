@@ -4,6 +4,7 @@ from meshmode.mesh import Mesh
 from meshmode.mesh.io import read_gmsh
 import numpy as np
 import meshmode.mesh.generation as mgen
+from meshmode.mesh import TensorProductElementGroup
 
 
 class MeshBuilder(ABC):
@@ -108,22 +109,10 @@ class SpheroidMeshBuilder(MeshBuilder):
         return affine_map(mesh, A=np.diag([1.0, 1.0, self.aspect_ratio]))
 
 
-# <<<<<<< HEAD
-# class BoxMeshBuilder(MeshBuilder):
-#    ambient_dim = 2
-#    group_cls = None
-#
-#    mesh_order = 1
-#=======
 class _BoxMeshBuilderBase(MeshBuilder):
-    def __init__(self, resolutions=None, mesh_order=None,
-                 group_cls=None, ambient_dim=None):
-        self.resolutions = resolutions or [4, 8, 16]
-        self.mesh_order = mesh_order or 1
-        self.group_cls = group_cls
-        self.ambient_dim = ambient_dim or 3
-        self.a = (-0.5, -0.5, -0.5)
-        self.b = (+0.5, +0.5, +0.5)
+    resolutions = [4, 8, 16]
+    mesh_order = 1
+    group_cls = None
 
     def get_mesh(self, resolution, mesh_order=None):
         if mesh_order is None:
@@ -139,27 +128,27 @@ class _BoxMeshBuilderBase(MeshBuilder):
 
 
 class BoxMeshBuilder1D(_BoxMeshBuilderBase):
-    def __init__(self, resolutions=None, mesh_order=None,
-                 group_cls=None, ambient_dim=None):
-        ambient_dim = 1
-        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
-                       group_cls=group_cls, ambient_dim=ambient_dim)
+    ambient_dim = 1
+
+    def __init__(self, tpe=False):
+        if tpe:
+            self.group_cls = TensorProductElementGroup
 
 
 class BoxMeshBuilder2D(_BoxMeshBuilderBase):
-    def __init__(self, resolutions=None, mesh_order=None,
-                 group_cls=None, ambient_dim=None):
-        ambient_dim = 2
-        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
-                       group_cls=group_cls, ambient_dim=ambient_dim)
+    ambient_dim = 2
+
+    def __init__(self, tpe=False):
+        if tpe:
+            self.group_cls = TensorProductElementGroup
 
 
 class BoxMeshBuilder3D(_BoxMeshBuilderBase):
-    def __init__(self, resolutions=None, mesh_order=None,
-                 group_cls=None, ambient_dim=None):
-        ambient_dim = 3
-        super().__init__(resolutions=resolutions, mesh_order=mesh_order,
-                       group_cls=group_cls, ambient_dim=ambient_dim )
+    ambient_dim = 3
+
+    def __init__(self, tpe=False):
+        if tpe:
+            self.group_cls = TensorProductElementGroup
 
 
 class WarpedRectMeshBuilder(MeshBuilder):

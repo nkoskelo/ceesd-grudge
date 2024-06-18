@@ -62,17 +62,14 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
 
     # {{{ cases
 
-    from meshmode.mesh import TensorProductElementGroup
-    group_cls = TensorProductElementGroup if tpe else None
-
     if name == "interval":
         if tpe:
             pytest.skip()
-        builder = mesh_data.BoxMeshBuilder1D(group_cls=group_cls)
+        builder = mesh_data.BoxMeshBuilder1D()
     elif name == "box2d":
-        builder = mesh_data.BoxMeshBuilder2D(group_cls=group_cls)
+        builder = mesh_data.BoxMeshBuilder2D(tpe=tpe)
     elif name == "box3d":
-        builder = mesh_data.BoxMeshBuilder3D(group_cls=group_cls)
+        builder = mesh_data.BoxMeshBuilder3D(tpe=tpe)
 
     else:
         raise ValueError("unknown geometry name: %s" % name)
@@ -314,7 +311,7 @@ def test_charlen(actx_factory, dim, degree, tpe, visualize=False):
             dtag_to_grp_fac = {
                 DISCR_TAG_BASE: Lgl(degree)
             }
-        
+
         dcoll = make_discretization_collection(actx, mesh, order=order,
                                          discr_tag_to_group_factory=dtag_to_grp_fac)
 
@@ -330,9 +327,9 @@ def test_charlen(actx_factory, dim, degree, tpe, visualize=False):
 
     # assert False
 
+
 # You can test individual routines by typing
 # $ python test_grudge.py 'test_routine()'
-
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
