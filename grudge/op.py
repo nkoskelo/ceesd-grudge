@@ -514,13 +514,12 @@ def _divergence_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec
 
     per_group_divs = [
 
-        # Disable for now: TPE div not working properly
-        # compute_tensor_product_div(actx, in_grp, get_diff_mat, vec_i, ijm_i)
-        # if isinstance(in_grp, TensorProductElementGroup)
+        compute_tensor_product_div(actx, in_grp, get_diff_mat, vec_i, ijm_i)
+        if isinstance(in_grp, TensorProductElementGroup)
 
         # r for rst axis
         # x for xyz axis
-        # else
+        else
         compute_simplicial_div(actx, in_grp, out_grp, get_diff_mat, vec_i,
                                ijm_i, metric_in_matvec)
 
