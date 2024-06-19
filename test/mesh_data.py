@@ -113,6 +113,8 @@ class _BoxMeshBuilderBase(MeshBuilder):
     resolutions = [4, 8, 16]
     mesh_order = 1
     group_cls = None
+    a = (-0.5, -0.5, -0.5)
+    b = (+0.5, +0.5, +0.5)
 
     def get_mesh(self, resolution, mesh_order=None):
         if mesh_order is None:
