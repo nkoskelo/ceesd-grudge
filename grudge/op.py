@@ -75,9 +75,6 @@ from arraycontext import (ArrayContext, map_array_container, tag_axes,
 from functools import partial
 
 from meshmode.dof_array import DOFArray, warn
-from meshmode.discretization.poly_element import (
-    TensorProductElementGroupBase as TensorProductElementGroup,
-    SimplexElementGroupBase as SimplexElementGroup)
 from meshmode.transform_metadata import (FirstAxisIsElementsTag,
                                          DiscretizationDOFAxisTag,
                                          DiscretizationElementAxisTag,
@@ -280,10 +277,7 @@ def _single_axis_derivative_kernel(
     return DOFArray(
         actx,
         data=tuple(
-            compute_tensor_product_derivative(actx, in_grp, get_diff_mat, vec_i,
-                                              ijm_i, xyz_axis, metric_in_matvec)
-            if isinstance(in_grp, TensorProductElementGroup)
-            else compute_simplicial_derivative(actx, in_grp, out_grp,
+            compute_simplicial_derivative(actx, in_grp, out_grp,
                                                get_diff_mat, vec_i, ijm_i,
                                                xyz_axis, metric_in_matvec)
             for out_grp, in_grp, vec_i, ijm_i in zip(
@@ -388,10 +382,7 @@ def _gradient_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec,
     # }}}
 
     per_group_grads = [
-        compute_tensor_product_grad(actx, in_grp, get_diff_mat, vec_i, ijm_i,
-                                    metric_in_matvec)
-        if isinstance(in_grp, TensorProductElementGroup)
-        else compute_simplicial_grad(actx, in_grp, out_grp, get_diff_mat, vec_i,
+        compute_simplicial_grad(actx, in_grp, out_grp, get_diff_mat, vec_i,
                                      ijm_i, metric_in_matvec)
 
         for out_grp, in_grp, vec_i, ijm_i in zip(
@@ -513,14 +504,7 @@ def _divergence_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec
     # }}}
 
     per_group_divs = [
-
-        compute_tensor_product_div(actx, in_grp, out_grp, get_diff_mat, vec_i,
-                                   ijm_i)
-        if isinstance(in_grp, TensorProductElementGroup)
-
-        # r for rst axis
-        # x for xyz axis
-        else compute_simplicial_div(actx, in_grp, out_grp, get_diff_mat, vec_i,
+        compute_simplicial_div(actx, in_grp, out_grp, get_diff_mat, vec_i,
                                     ijm_i, metric_in_matvec)
 
         for out_grp, in_grp, vec_i, ijm_i in zip(
@@ -545,37 +529,12 @@ def _reference_derivative_matrices(actx: ArrayContext,
         actx, _reference_derivative_matrices,
         lambda grp: grp.discretization_key())
     def get_ref_derivative_mats(grp):
-        if isinstance(grp, TensorProductElementGroup):
-            import modepy as mp
-            import numpy.linalg as la
-
-            #FIXME: Can be gotten rid of by updating meshmode
-            nodes1d = grp.unit_nodes_1d
-            bases_1d = grp.bases_1d()
-
-            vdm_1d = mp.vandermonde(bases_1d.functions, nodes1d)
-            vdm_p_1d = mp.vandermonde(bases_1d.gradients, nodes1d)[0]
-
-            diff_mat = actx.from_numpy(vdm_p_1d @ la.inv(vdm_1d))
-
-            from arraycontext.metadata import NameHint
-            return actx.freeze(
-                    actx.tag(NameHint("tp_diff_mat_1d"),
-                             tag_axes(actx, {
-                                 1: DiscretizationDOFAxisTag()},
-                                      diff_mat)))
-
-        elif isinstance(grp, SimplexElementGroup):
-            from meshmode.discretization.poly_element import diff_matrices
-            return actx.freeze(
-                    actx.tag_axis(
-                        1, DiscretizationDOFAxisTag(),
-                        actx.from_numpy(
-                            np.asarray(diff_matrices(grp)))))
-
-        else:
-            raise TypeError("grp must be either a TensorProductElementGroup or"
-                            f" a SimplexElementGroup. Found {grp}")
+        from meshmode.discretization.poly_element import diff_matrices
+        return actx.freeze(
+            actx.tag_axis(
+                1, DiscretizationDOFAxisTag(),
+                actx.from_numpy(
+                    np.asarray(diff_matrices(grp)))))
 
     return get_ref_derivative_mats(out_element_group)
 
@@ -746,40 +705,6 @@ def _reference_stiffness_transpose_matrices(
         if in_grp == out_grp:
             from meshmode.discretization.poly_element import \
                 mass_matrix, diff_matrices
-
-            # {{{ tensor product case
-
-            if isinstance(out_grp, TensorProductElementGroup):
-                import modepy as mp
-                import numpy.linalg as la
-
-                # FIXME: can be gotten rid of by updating meshmode operators
-                basis_1d = out_grp.bases_1d()
-                nodes_1d = out_grp.unit_nodes_1d
-
-                vdm = mp.vandermonde(basis_1d.functions, nodes_1d)
-                vdm_p = mp.vandermonde(basis_1d.gradients, nodes_1d)[0]
-
-                mass_1d = la.inv(vdm @ vdm.T)
-                diff_mat = la.solve(vdm.T, vdm_p.T).T
-
-                stiff_1d = actx.freeze(
-                        actx.tag_axis(1, DiscretizationDOFAxisTag(),
-                                      actx.from_numpy(
-                                      np.asarray(
-                                          diff_mat.T @ mass_1d.T))))
-
-                from grudge.array_context import MassMatrix1d
-                mass_1d = actx.freeze(
-                    actx.tag_axis(
-                        1, (DiscretizationDOFAxisTag(),),
-                        actx.from_numpy(np.asarray(mass_1d)))
-                )
-                mass_1d = actx.tag(MassMatrix1d(), mass_1d)
-
-                return (stiff_1d, mass_1d)
-
-            # }}}
 
             mmat = mass_matrix(out_grp)
 
@@ -1122,30 +1047,14 @@ def reference_inverse_mass_matrix(actx: ArrayContext, element_group):
     def get_ref_inv_mass_mat(grp):
         from modepy import inverse_mass_matrix
 
-        if isinstance(grp, TensorProductElementGroup):
-            basis_1d = grp.bases_1d()
-            nodes_1d = grp.unit_nodes_1d
-            inv_mass_1d = inverse_mass_matrix(basis_1d.functions, nodes_1d)
+        basis = grp.basis_obj()
 
-            from grudge.array_context import InverseMassMatrix1d
-            inv_mass_1d = actx.tag_axis(0, DiscretizationDOFAxisTag(),
-                                        actx.from_numpy(np.asarray(inv_mass_1d)))
-            inv_mass_1d = actx.freeze(
-                actx.tag(InverseMassMatrix1d(), inv_mass_1d))
-
-            return inv_mass_1d
-        elif isinstance(grp, SimplexElementGroup):
-            basis = grp.basis_obj()
-
-            return actx.freeze(
-                actx.tag_axis(0, DiscretizationDOFAxisTag(),
-                    actx.from_numpy(
+        return actx.freeze(
+            actx.tag_axis(0, DiscretizationDOFAxisTag(),
+                          actx.from_numpy(
                         np.asarray(
                             inverse_mass_matrix(basis.functions, grp.unit_nodes),
                             order="C"))))
-        else:
-            raise TypeError("grp must be either a TensorProductElementGroup or"
-                            f" a SimplexElementGroup. Found {grp}")
 
     return get_ref_inv_mass_mat(element_group)
 
@@ -1192,7 +1101,6 @@ def _apply_inverse_mass_operator(
         )
 
     def apply_to_simplicial_elements(jac_inv, vec, ref_inv_mass):
-
         # Based on https://arxiv.org/pdf/1608.03836.pdf
         # true_Minv ~ ref_Minv * ref_M * (1/jac_det) * ref_Minv
         return actx.einsum(
@@ -1203,10 +1111,6 @@ def _apply_inverse_mass_operator(
             tagged=(FirstAxisIsElementsTag(),))
 
     group_data = [
-        apply_to_tensor_product_elements(
-            grp, jac_inv, vec_i,
-            reference_inverse_mass_matrix(actx, element_group=grp))
-        if isinstance(grp, TensorProductElementGroup) else
         apply_to_simplicial_elements(jac_inv, vec_i,
             reference_inverse_mass_matrix(actx, element_group=grp))
         for grp, jac_inv, vec_i in zip(discr.groups, inv_area_elements, vec)
