@@ -22,38 +22,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-import numpy as np
-
+import logging
 from dataclasses import dataclass
 
-from arraycontext import (
-    with_container_arithmetic,
-    dataclass_array_container,
-    pytest_generate_tests_for_array_contexts
-)
-
-from meshmode.dof_array import DOFArray
-
-from grudge.array_context import PytestPyOpenCLArrayContextFactory
-
-pytest_generate_tests = pytest_generate_tests_for_array_contexts(
-        [PytestPyOpenCLArrayContextFactory])
-
-from grudge import DiscretizationCollection
-
-import grudge.op as op
 import mesh_data
-
-from meshmode.dof_array import flatten
-
-from pytools.obj_array import make_obj_array
-
+import numpy as np
 import pytest
 
-import logging
+from arraycontext import (
+    dataclass_array_container,
+    flatten,
+    pytest_generate_tests_for_array_contexts,
+    with_container_arithmetic,
+)
+from meshmode.dof_array import DOFArray
+from pytools.obj_array import make_obj_array
+
+from grudge import op
+from grudge.array_context import PytestPyOpenCLArrayContextFactory
+from grudge.discretization import make_discretization_collection
 
 
 logger = logging.getLogger(__name__)
+pytest_generate_tests = pytest_generate_tests_for_array_contexts(
+        [PytestPyOpenCLArrayContextFactory])
 
 
 @pytest.mark.parametrize(("mesh_size", "with_initial"), [
@@ -68,7 +60,7 @@ def test_nodal_reductions(actx_factory, mesh_size, with_initial):
     builder = mesh_data.BoxMeshBuilder1D()
 
     mesh = builder.get_mesh(mesh_size)
-    dcoll = DiscretizationCollection(actx, mesh, order=4)
+    dcoll = make_discretization_collection(actx, mesh, order=4)
     x = actx.thaw(dcoll.nodes())
 
     def f(x):
@@ -82,9 +74,9 @@ def test_nodal_reductions(actx_factory, mesh_size, with_initial):
 
     fields = make_obj_array([f(x), g(x), h(x)])
 
-    f_ref = actx.to_numpy(flatten(fields[0]))
-    g_ref = actx.to_numpy(flatten(fields[1]))
-    h_ref = actx.to_numpy(flatten(fields[2]))
+    f_ref = actx.to_numpy(flatten(fields[0], actx))
+    g_ref = actx.to_numpy(flatten(fields[1], actx))
+    h_ref = actx.to_numpy(flatten(fields[2], actx))
     concat_fields = np.concatenate([f_ref, g_ref, h_ref])
 
     for grudge_op, np_op in [(op.nodal_max, np.max),
@@ -134,7 +126,7 @@ def test_elementwise_reductions(actx_factory):
 
     nelements = 4
     mesh = builder.get_mesh(nelements)
-    dcoll = DiscretizationCollection(actx, mesh, order=4)
+    dcoll = make_discretization_collection(actx, mesh, order=4)
     x = actx.thaw(dcoll.nodes())
 
     def f(x):
@@ -194,7 +186,7 @@ def test_nodal_reductions_with_container(actx_factory):
     builder = mesh_data.BoxMeshBuilder2D()
 
     mesh = builder.get_mesh(4)
-    dcoll = DiscretizationCollection(actx, mesh, order=4)
+    dcoll = make_discretization_collection(actx, mesh, order=4)
     x = actx.thaw(dcoll.nodes())
 
     def f(x):
@@ -215,10 +207,11 @@ def test_nodal_reductions_with_container(actx_factory):
                                 momentum=momentum,
                                 enthalpy=enthalpy)
 
-    mass_ref = actx.to_numpy(flatten(mass))
-    momentum_ref = np.concatenate([actx.to_numpy(mom_i)
-                                   for mom_i in flatten(momentum)])
-    enthalpy_ref = actx.to_numpy(flatten(enthalpy))
+    mass_ref = actx.to_numpy(flatten(mass, actx))
+    momentum_ref = np.concatenate([
+            actx.to_numpy(mom_i)
+            for mom_i in flatten(momentum, actx, leaf_class=DOFArray)])
+    enthalpy_ref = actx.to_numpy(flatten(enthalpy, actx))
     concat_fields = np.concatenate([mass_ref, momentum_ref, enthalpy_ref])
 
     for grudge_op, np_op in [(op.nodal_sum, np.sum),
@@ -241,7 +234,7 @@ def test_elementwise_reductions_with_container(actx_factory):
 
     nelements = 4
     mesh = builder.get_mesh(nelements)
-    dcoll = DiscretizationCollection(actx, mesh, order=4)
+    dcoll = make_discretization_collection(actx, mesh, order=4)
     x = actx.thaw(dcoll.nodes())
 
     def f(x):

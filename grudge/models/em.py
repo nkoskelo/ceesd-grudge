@@ -28,18 +28,16 @@ THE SOFTWARE.
 """
 
 
+import numpy as np
+
 from arraycontext import get_container_context_recursively
-
-from grudge.models import HyperbolicOperator
-
 from meshmode.mesh import BTAG_ALL, BTAG_NONE
-
-from pytools import memoize_method, levi_civita
+from pytools import levi_civita, memoize_method
 from pytools.obj_array import flat_obj_array, make_obj_array
 
-import grudge.op as op
 import grudge.geometry as geo
-import numpy as np
+import grudge.op as op
+from grudge.models import HyperbolicOperator
 
 
 # {{{ helpers
@@ -263,13 +261,13 @@ class MaxwellOperator(HyperbolicOperator):
                     1/2*(
                         -self.space_cross_h(normal, h.ext-h.int)
                         # multiplication by epsilon undoes material divisor below
-                        #-max_c*(epsilon*e.int - epsilon*e.ext)
+                        # -max_c*(epsilon*e.int - epsilon*e.ext)
                     ),
                     # flux h
                     1/2*(
                         self.space_cross_e(normal, e.ext-e.int)
                         # multiplication by mu undoes material divisor below
-                        #-max_c*(mu*h.int - mu*h.ext)
+                        # -max_c*(mu*h.int - mu*h.ext)
                     ))
         elif isinstance(self.flux_type, (int, float)):
             # see doc/maxima/maxwell.mac
@@ -288,8 +286,7 @@ class MaxwellOperator(HyperbolicOperator):
                         ),
                     )
         else:
-            raise ValueError("maxwell: invalid flux_type (%s)"
-                    % self.flux_type)
+            raise ValueError(f"maxwell: invalid flux_type ({self.flux_type})")
 
     def local_derivatives(self, w):
         """Template for the spatial derivatives of the relevant components of
@@ -413,6 +410,8 @@ class MaxwellOperator(HyperbolicOperator):
         def flux(pair):
             return op.project(dcoll, pair.dd, "all_faces", self.flux(pair))
 
+        from grudge.dof_desc import as_dofdesc
+
         return (
             - self.local_derivatives(w)
             - op.inverse_mass(
@@ -420,7 +419,7 @@ class MaxwellOperator(HyperbolicOperator):
                 op.face_mass(
                     dcoll,
                     sum(flux(tpair) for tpair in op.interior_trace_pairs(dcoll, w))
-                    + sum(flux(op.bv_trace_pair(dcoll, tag, w, bc))
+                    + sum(flux(op.bv_trace_pair(dcoll, as_dofdesc(tag), w, bc))
                           for tag, bc in tags_and_bcs)
                 )
             )
@@ -465,7 +464,8 @@ class MaxwellOperator(HyperbolicOperator):
             self.pec_tag,
             self.pmc_tag,
             self.absorb_tag,
-            self.incident_tag])
+            self.incident_tag,
+            ])
 
 # }}}
 
@@ -482,8 +482,7 @@ class TMMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (False, False, True)  # only ez
-                + (True, True, False)  # hx and hy
+                (False, False, True, True, True, False)  # ez, hx and hy
                 )
 
 # }}}
@@ -501,8 +500,7 @@ class TEMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (True, True, False)  # ex and ey
-                + (False, False, True)  # only hz
+                (True, True, False, False, False, True)  # ex and ey, only hz
                 )
 
 # }}}
@@ -520,8 +518,7 @@ class TE1DMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (True, True, False)
-                + (False, False, True)
+                (True, True, False, False, False, True)
                 )
 
 # }}}
@@ -539,8 +536,7 @@ class SourceFree1DMaxwellOperator(MaxwellOperator):
 
     def get_eh_subset(self):
         return (
-                (False, True, False)
-                + (False, False, True)
+                (False, True, False, False, False, True)
                 )
 
 # }}}

@@ -54,41 +54,51 @@ THE SOFTWARE.
 """
 
 
-from warnings import warn
-from typing import List, Hashable, Optional, Tuple, Type, Any, Sequence, Mapping
-
-from pytools.persistent_dict import KeyBuilder
-
-from arraycontext import (
-    ArrayContainer,
-    ArrayContext,
-    with_container_arithmetic,
-    dataclass_array_container,
-    get_container_context_recursively_opt,
-    to_numpy,
-    from_numpy,
-    ArrayOrContainer
-)
-
 from dataclasses import dataclass
-
 from numbers import Number
-
-from pytools import memoize_on_first_arg
-
-from grudge.discretization import DiscretizationCollection, PartID
-from grudge.projection import project
-
-from meshmode.mesh import BTAG_PARTITION
+from typing import (
+    Any,
+    Hashable,
+    List,
+    Mapping,
+    Optional,
+    Tuple,
+    Type,
+    Sequence
+)
+from warnings import warn
 
 import numpy as np
 
+from arraycontext import (
+    ArrayContainer,
+    ArrayOrContainer,
+    dataclass_array_container,
+    flatten,
+    from_numpy,
+    get_container_context_recursively,
+    get_container_context_recursively_opt,
+    to_numpy,
+    unflatten,
+    with_container_arithmetic,
+)
+from meshmode.mesh import BTAG_PARTITION
+from pytools import memoize_on_first_arg
+from pytools.persistent_dict import KeyBuilder
+
 import grudge.dof_desc as dof_desc
+from grudge.discretization import DiscretizationCollection, PartID
 from grudge.dof_desc import (
-        DOFDesc, DD_VOLUME_ALL, FACE_RESTR_INTERIOR, DISCR_TAG_BASE,
-        VolumeTag, VolumeDomainTag, BoundaryDomainTag,
-        ConvertibleToDOFDesc,
-        )
+    DD_VOLUME_ALL,
+    DISCR_TAG_BASE,
+    FACE_RESTR_INTERIOR,
+    BoundaryDomainTag,
+    ConvertibleToDOFDesc,
+    DOFDesc,
+    VolumeTag,
+    VolumeDomainTag,
+)
+from grudge.projection import project
 
 
 # {{{ trace pair container class
@@ -346,12 +356,8 @@ def interior_trace_pairs(
     if volume_dd is None:
         volume_dd = DD_VOLUME_ALL
 
-    return (
-        [local_interior_trace_pair(
-            dcoll, vec, volume_dd=volume_dd)]
-        + cross_rank_trace_pairs(
-            dcoll, vec, comm_tag=comm_tag, volume_dd=volume_dd)
-    )
+    return [local_interior_trace_pair(dcoll, vec, volume_dd=volume_dd),
+            *cross_rank_trace_pairs(dcoll, vec, comm_tag=comm_tag, volume_dd=volume_dd)]
 
 # }}}
 
@@ -495,6 +501,10 @@ def connected_parts(
             part_id.volume_tag == self_volume_tag
             and connected_part_id.volume_tag == other_volume_tag)]
 
+    # This commented bit might be newer way - check with Matt
+    # from meshmode.distributed import get_connected_parts
+    # return get_connected_parts(
+    #    dcoll._volume_discrs[volume_dd.domain_tag.tag].mesh)
     return result
 
 
@@ -521,7 +531,8 @@ def _sym_tag_to_num_tag(comm_tag: Optional[Hashable]) -> Optional[int]:
     warn("Encountered unknown symbolic tag "
             f"'{comm_tag}', assigning a value of '{num_tag}'. "
             "This is a temporary workaround, please ensure that "
-            "tags are sufficiently distinct for your use case.")
+            "tags are sufficiently distinct for your use case.",
+            stacklevel=1)
 
     return num_tag
 

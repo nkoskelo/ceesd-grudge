@@ -19,37 +19,47 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
-
-
-from meshmode.mesh.processing import affine_map
-from meshmode.discretization.poly_element import (
-    InterpolatoryEdgeClusteredGroupFactory, QuadratureGroupFactory)
-import numpy as np
-
-from meshmode.mesh import BTAG_ALL
-import meshmode.mesh.generation as mgen
-
-from pytools.obj_array import make_obj_array
-
-from grudge import op, geometry as geo, DiscretizationCollection
-from grudge.discretization import make_discretization_collection
-from grudge.dof_desc import (DISCR_TAG_BASE, DISCR_TAG_QUAD, DTAG_VOLUME_ALL,
-    DOFDesc, as_dofdesc)
-
-from meshmode.mesh import SimplexElementGroup, TensorProductElementGroup
-
-import pytest
-
-from grudge.array_context import PytestPyOpenCLArrayContextFactory
-from arraycontext import pytest_generate_tests_for_array_contexts
-
-from grudge.trace_pair import bv_trace_pair
-pytest_generate_tests = pytest_generate_tests_for_array_contexts(
-        [PytestPyOpenCLArrayContextFactory])
-
 import logging
 
+import numpy as np
+import pytest
+
+from meshmode.mesh import (
+    SimplexElementGroup,
+    TensorProductElementGroup
+)
+import meshmode.mesh.generation as mgen
+from meshmode.mesh.processing import affine_map
+from arraycontext import pytest_generate_tests_for_array_contexts
+from meshmode.discretization.poly_element import (
+    InterpolatoryEdgeClusteredGroupFactory,
+    QuadratureGroupFactory,
+)
+from meshmode.mesh import BTAG_ALL
+from pytools.obj_array import make_obj_array
+
+from grudge import (
+    geometry as geo,
+    op,
+    DiscretizationCollection,
+)
+from grudge.array_context import PytestPyOpenCLArrayContextFactory
+from grudge.discretization import make_discretization_collection
+from grudge.dof_desc import (
+    DISCR_TAG_BASE,
+    DISCR_TAG_QUAD,
+    DTAG_VOLUME_ALL,
+    FACE_RESTR_ALL,
+    VTAG_ALL,
+    BoundaryDomainTag,
+    as_dofdesc,
+)
+from grudge.trace_pair import bv_trace_pair
+
+
 logger = logging.getLogger(__name__)
+pytest_generate_tests = pytest_generate_tests_for_array_contexts(
+        [PytestPyOpenCLArrayContextFactory])
 
 
 # {{{ gradient
@@ -157,10 +167,12 @@ def test_gradient(actx_factory, form, dim, order, warp_mesh, vectorize, nested,
             else:
                 return vec
 
-        def get_flux(u_tpair):
+        def get_flux(u_tpair, dcoll=dcoll):
             dd = u_tpair.dd
-            dd_allfaces = dd.with_domain_tag("all_faces")
-            normal = geo.normal(actx, dcoll, dd)
+            dd_allfaces = dd.with_domain_tag(
+                BoundaryDomainTag(FACE_RESTR_ALL, VTAG_ALL)
+                )
+            normal = geometry.normal(actx, dcoll, dd)
             u_avg = u_tpair.avg
             if vectorize:
                 if nested:
@@ -190,7 +202,7 @@ def test_gradient(actx_factory, form, dim, order, warp_mesh, vectorize, nested,
             else:
                 quad_discr_tag = DISCR_TAG_BASE
 
-            allfaces_dd_base = as_dofdesc("all_faces", quad_discr_tag)
+            allfaces_dd_base = as_dofdesc(FACE_RESTR_ALL, quad_discr_tag)
             vol_dd_base = as_dofdesc(DTAG_VOLUME_ALL)
             vol_dd_quad = vol_dd_base.with_discr_tag(quad_discr_tag)
             bdry_dd_quad = bdry_dd_base.with_discr_tag(quad_discr_tag)
@@ -200,7 +212,7 @@ def test_gradient(actx_factory, form, dim, order, warp_mesh, vectorize, nested,
                 -op.weak_local_grad(dcoll, vol_dd_quad,
                         op.project(dcoll, vol_dd_base, vol_dd_quad, u),
                         nested=nested)
-                +  # noqa: W504
+                +
                 op.face_mass(dcoll,
                     allfaces_dd_quad,
                     sum(get_flux(
@@ -287,7 +299,7 @@ def test_divergence(actx_factory, form, dim, order, vectorize, nested,
             from meshmode.discretization.poly_element import \
                     LegendreGaussLobattoTensorProductGroupFactory as LGL
 
-            dcoll = DiscretizationCollection(
+            dcoll = make_discretization_collection(
                 actx,
                 mesh,
                 discr_tag_to_group_factory={
@@ -308,14 +320,15 @@ def test_divergence(actx_factory, form, dim, order, vectorize, nested,
         ])[:dim, :dim]
 
         mesh = affine_map(mesh, A=rot_mat)
-        def f(x):
+
+        def f(x, dcoll=dcoll):
             result = make_obj_array([dcoll.zeros(actx) + (i+1) for i in range(dim)])
             for i in range(dim-1):
                 result = result * actx.np.sin(np.pi*x[i])
             result = result * actx.np.cos(np.pi/2*x[dim-1])
             return result
 
-        def div_f(x):
+        def div_f(x, dcoll=dcoll):
             result = dcoll.zeros(actx)
             for i in range(dim-1):
                 deriv = dcoll.zeros(actx) + (i+1)
@@ -342,14 +355,16 @@ def test_divergence(actx_factory, form, dim, order, vectorize, nested,
         else:
             u = f(x)
 
-        def get_flux(u_tpair):
+        def get_flux(u_tpair, dcoll=dcoll):
             dd = u_tpair.dd
-            dd_allfaces = dd.with_dtag("all_faces")
-            normal = geo.normal(actx, dcoll, dd)
+            dd_allfaces = dd.with_domain_tag(
+                BoundaryDomainTag(FACE_RESTR_ALL, VTAG_ALL)
+                )
+            normal = geometry.normal(actx, dcoll, dd)
             flux = u_tpair.avg @ normal
             return op.project(dcoll, dd, dd_allfaces, flux)
 
-        dd_allfaces = DOFDesc("all_faces")
+        dd_allfaces = as_dofdesc(FACE_RESTR_ALL)
 
         if form == "strong":
             div_u = (
@@ -359,7 +374,7 @@ def test_divergence(actx_factory, form, dim, order, vectorize, nested,
         elif form == "weak":
             div_u = op.inverse_mass(dcoll,
                 -op.weak_local_div(dcoll, u)
-                +  # noqa: W504
+                +
                 op.face_mass(dcoll,
                     dd_allfaces,
                     # Note: no boundary flux terms here because u_ext == u_int == 0

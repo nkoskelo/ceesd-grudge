@@ -24,16 +24,18 @@ THE SOFTWARE.
 
 import numpy as np
 
+from arraycontext import pytest_generate_tests_for_array_contexts
+
 from grudge.array_context import (
     PytestPyOpenCLArrayContextFactory,
-    PytestPytatoPyOpenCLArrayContextFactory
+    PytestPytatoPyOpenCLArrayContextFactory,
 )
-from arraycontext import pytest_generate_tests_for_array_contexts
+
+
 pytest_generate_tests = pytest_generate_tests_for_array_contexts(
         [PytestPyOpenCLArrayContextFactory,
          PytestPytatoPyOpenCLArrayContextFactory])
 
-# <<<<<<< HEAD
 from grudge import make_discretization_collection
 #
 # =======
@@ -41,12 +43,13 @@ from grudge import make_discretization_collection
 # >>>>>>> main
 
 import grudge.op as op
+import logging
 
 import mesh_data
-
 import pytest
 
-import logging
+import grudge.op as op
+from grudge.discretization import make_discretization_collection
 
 
 logger = logging.getLogger(__name__)
@@ -72,7 +75,7 @@ def test_geometric_factors_regular_refinement(actx_factory, name, tpe):
         builder = mesh_data.BoxMeshBuilder3D(tpe=tpe)
 
     else:
-        raise ValueError("unknown geometry name: %s" % name)
+        raise ValueError(f"unknown geometry name: {name}")
 
     # }}}
 
@@ -127,7 +130,7 @@ def test_non_geometric_factors(actx_factory, name):
     elif name == "box3d":
         builder = mesh_data.BoxMeshBuilder3D()
     else:
-        raise ValueError("unknown geometry name: %s" % name)
+        raise ValueError(f"unknown geometry name: {name}")
 
     # }}}
 
@@ -207,8 +210,8 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
         dtag_to_grp_fac = {
             DISCR_TAG_BASE: Lgl(degree)
         }
-    dcoll = make_discretization_collection(actx, mesh, order=order,
-                                     discr_tag_to_group_factory=dtag_to_grp_fac)
+    dcoll = make_discretization_collection(
+        actx, mesh, order=order, discr_tag_to_group_factory=dtag_to_grp_fac)
 
     from grudge.models.wave import WeakWaveOperator
     wave_op = WeakWaveOperator(dcoll, c=1)
@@ -226,8 +229,8 @@ def test_wave_dt_estimate(actx_factory, dim, degree, tpe, visualize=False):
 
     assert (eigvals.real <= 1e-12).all()
 
-    from leap.rk import stability_function, RK4MethodBuilder
     import sympy as sp
+    from leap.rk import RK4MethodBuilder, stability_function
     stab_func = sp.lambdify(*stability_function(
         RK4MethodBuilder.a_explicit,
         RK4MethodBuilder.output_coeffs))

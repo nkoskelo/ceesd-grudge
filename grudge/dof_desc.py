@@ -76,15 +76,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-from warnings import warn
-from typing import Hashable, Union, Type, Optional, Any, Tuple
 from dataclasses import dataclass, replace
+from typing import Any, Hashable, Optional, Tuple, Type, Union
+from warnings import warn
 
-from meshmode.discretization.connection import (
-    FACE_RESTR_INTERIOR, FACE_RESTR_ALL)
+from meshmode.discretization.connection import FACE_RESTR_ALL, FACE_RESTR_INTERIOR
 from meshmode.mesh import (
-    BTAG_PARTITION, BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE, BoundaryTag)
-
+    BTAG_ALL,
+    BTAG_NONE,
+    BTAG_PARTITION,
+    BTAG_REALLY_ALL,
+    BoundaryTag,
+)
 from pytools import to_identifier
 
 
@@ -102,7 +105,7 @@ VolumeTag = Hashable
 # {{{ domain tag
 
 @dataclass(frozen=True, eq=True)
-class ScalarDomainTag:  # noqa: N801
+class ScalarDomainTag:
     """A domain tag denoting scalar values."""
 
 
@@ -144,7 +147,7 @@ DomainTag = Union[ScalarDomainTag, VolumeDomainTag, BoundaryDomainTag]
 
 # {{{ discretization tag
 
-class _DiscretizationTag:  # noqa: N801
+class _DiscretizationTag:
     pass
 
 
@@ -227,8 +230,9 @@ class DOFDesc:
     domain_tag: DomainTag
     discretization_tag: DiscretizationTag
 
-    def __init__(self, domain_tag: Any,
-            discretization_tag: Optional[type[DiscretizationTag]] = None):
+    def __init__(self,
+            domain_tag: Any,
+            discretization_tag: Optional[Type[DiscretizationTag]] = None):
 
         if (
                 not (isinstance(domain_tag,
@@ -409,7 +413,7 @@ def _normalize_domain_and_discr_tag(
     elif domain in [BTAG_ALL, BTAG_REALLY_ALL, BTAG_NONE]:
         domain = BoundaryDomainTag(domain, _contextual_volume_tag)
     else:
-        raise ValueError("domain tag not understood: %s" % domain)
+        raise ValueError(f"domain tag not understood: {domain}")
 
     if domain is DTAG_SCALAR and discretization_tag is not None:
         raise ValueError("cannot have nontrivial discretization tag on scalar")
