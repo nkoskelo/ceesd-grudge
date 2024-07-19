@@ -72,6 +72,7 @@ import numpy as np
 
 from arraycontext import (
     ArrayContainer,
+    ArrayContext,
     ArrayOrContainer,
     dataclass_array_container,
     flatten,

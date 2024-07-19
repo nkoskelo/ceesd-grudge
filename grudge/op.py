@@ -122,7 +122,7 @@ from grudge.reductions import (
 from grudge.trace_pair import (
     bdry_trace_pair,
     bv_trace_pair,
-    connected_ranks,
+    # connected_ranks,
     cross_rank_trace_pairs,
     cross_rank_inter_volume_trace_pairs,
     inter_volume_trace_pairs,
@@ -139,7 +139,6 @@ __all__ = (
     "bdry_trace_pair",
     "bv_trace_pair",
     "connected_parts",
-    "connected_ranks",
     "cross_rank_inter_volume_trace_pairs",
     "cross_rank_trace_pairs",
     "elementwise_integral",
