@@ -1280,7 +1280,9 @@ def inverse_mass(dcoll: DiscretizationCollection, *args) -> ArrayOrContainer:
         raise TypeError("invalid number of arguments")
 
     if dd.uses_quadrature():
-        return _apply_inverse_mass_operator_quad(dcoll, dd, dd, vec)
+        if not dcoll._has_affine_groups(dd.domain_tag):
+            return _apply_inverse_mass_operator_quad(dcoll, dd, dd, vec)
+        dd = dd.with_discr_tag(DISCR_TAG_BASE)
 
     return _apply_inverse_mass_operator(dcoll, dd, dd, vec)
 
