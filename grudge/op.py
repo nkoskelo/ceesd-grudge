@@ -1135,11 +1135,15 @@ def _apply_inverse_mass_operator_quad(
     discr_quad = dcoll.discr_from_dd(dd_quad)
     discr_base = dcoll.discr_from_dd(dd_base)
 
-    ae = \
-        project(dcoll, dd_base, dd_quad,
-                area_element(
-                    actx, dcoll, dd=dd_base,
-                    _use_geoderiv_connection=actx.supports_nonscalar_broadcasting))
+    # ae = \
+    #    project(dcoll, dd_base, dd_quad,
+    #            area_element(
+    #                actx, dcoll, dd=dd_base,
+    #                _use_geoderiv_connection=actx.supports_nonscalar_broadcasting))
+
+    ae = area_element(
+        actx, dcoll, dd=dd_quad,
+        _use_geoderiv_connection=actx.supports_nonscalar_broadcasting)
 
     inv_area_elements = 1./ae
 
@@ -1169,6 +1173,14 @@ def _apply_inverse_mass_operator_quad(
         return actx.einsum(
             "ij,ej->ei",
             ref_inv_mass,
+            vec,
+            tagged=(FirstAxisIsElementsTag(),))
+
+    def apply_to_simplicial_elements_staged(mm_inv, mm, vec):
+        return actx.einsum(
+            "ni,ij,ej->en",
+            mm_inv,
+            mm,
             vec,
             tagged=(FirstAxisIsElementsTag(),))
 
@@ -1208,12 +1220,21 @@ def _apply_inverse_mass_operator_quad(
     stage1 = DOFArray(actx, data=tuple(stage1_group_data))
     stage1 = project(dcoll, dd_base, dd_quad, stage1)
 
+
     stage2_group_data = [
         apply_to_simplicial_elements_stage2(jac_inv, vec_i)
         for jac_inv, vec_i in zip(inv_area_elements, stage1)
     ]
 
     stage2 = DOFArray(actx, data=tuple(stage2_group_data))
+
+    staged_group_data = [
+        apply_to_simplicial_elements_staged(
+            reference_inverse_mass_matrix(actx, out_grp),
+            reference_mass_matrix(actx, out_grp, in_grp), vec_i)
+        for in_grp, out_grp, vec_i in zip(
+                discr_quad.groups, discr_base.groups, stage2)
+    ]
 
     stage3_group_data = [
         apply_to_simplicial_elements_stage3(
@@ -1229,7 +1250,8 @@ def _apply_inverse_mass_operator_quad(
         for grp, vec_i in zip(discr_base.groups, stage3)
     ]
 
-    return DOFArray(actx, data=tuple(group_data))
+    # return DOFArray(actx, data=tuple(group_data))
+    return DOFArray(actx, data=tuple(staged_group_data))
 
 
 def inverse_mass(dcoll: DiscretizationCollection, *args) -> ArrayOrContainer:
