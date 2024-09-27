@@ -117,18 +117,22 @@ class _BoxMeshBuilderBase(MeshBuilder):
     group_cls = None
     a = (-0.5, -0.5, -0.5)
     b = (+0.5, +0.5, +0.5)
+    tpe: bool
+
+    def __init__(self, tpe=False):
+        self.tpe = tpe
 
     def get_mesh(self, resolution, mesh_order=None):
         if mesh_order is None:
             mesh_order = self.mesh_order
         if not isinstance(resolution, (list, tuple)):
             resolution = (resolution,) * self.ambient_dim
-
+        from meshmode.mesh import TensorProductElementGroup
+        group_cls = TensorProductElementGroup if self.tpe else None
         return mgen.generate_regular_rect_mesh(
                 a=self.a, b=self.b,
                 nelements_per_axis=resolution,
-                group_cls=self.group_cls,
-                order=mesh_order)
+                group_cls=group_cls, order=mesh_order)
 
 
 class BoxMeshBuilder1D(_BoxMeshBuilderBase):
@@ -137,7 +141,9 @@ class BoxMeshBuilder1D(_BoxMeshBuilderBase):
     def __init__(self, tpe=False):
         if tpe:
             self.group_cls = TensorProductElementGroup
-
+        else:
+            tpe = False
+        self.tpe = tpe
 
 class BoxMeshBuilder2D(_BoxMeshBuilderBase):
     ambient_dim = 2
@@ -145,6 +151,9 @@ class BoxMeshBuilder2D(_BoxMeshBuilderBase):
     def __init__(self, tpe=False):
         if tpe:
             self.group_cls = TensorProductElementGroup
+        else:
+            tpe = False
+        self.tpe = tpe
 
 
 class BoxMeshBuilder3D(_BoxMeshBuilderBase):
@@ -153,7 +162,9 @@ class BoxMeshBuilder3D(_BoxMeshBuilderBase):
     def __init__(self, tpe=False):
         if tpe:
             self.group_cls = TensorProductElementGroup
-
+        else:
+            tpe = False
+        self.tpe = tpe
 
 class WarpedRectMeshBuilder(MeshBuilder):
     resolutions: ClassVar[Sequence[Hashable]] = [4, 6, 8]

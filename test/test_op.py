@@ -107,29 +107,29 @@ def test_gradient(actx_factory, form, dim, order, warp_mesh, vectorize, nested,
                 nelements_per_axis=(n,)*dim,
                 group_cls=group_cls)
 
-        if group_cls is TensorProductElementGroup:
+        # if group_cls is TensorProductElementGroup:
 
-            import grudge.dof_desc as dd
-            from meshmode.discretization.poly_element import \
-                    LegendreGaussLobattoTensorProductGroupFactory as LGL
+        #    import grudge.dof_desc as dd
+        #    from meshmode.discretization.poly_element import \
+        #            LegendreGaussLobattoTensorProductGroupFactory as LGL
 
-            dcoll = DiscretizationCollection(
-                actx,
-                mesh,
-                discr_tag_to_group_factory={
-                    dd.DISCR_TAG_BASE: LGL(order)})
+        #    dcoll = DiscretizationCollection(
+        #        actx,
+        #        mesh,
+        #        discr_tag_to_group_factory={
+        #            dd.DISCR_TAG_BASE: LGL(order)})
 
-        elif group_cls is SimplexElementGroup:
-            dcoll = make_discretization_collection(
-                actx, mesh,
-                discr_tag_to_group_factory={
-                    DISCR_TAG_BASE: InterpolatoryEdgeClusteredGroupFactory(order),
-                    DISCR_TAG_QUAD: QuadratureGroupFactory(3 * order)
-                })
+        # elif group_cls is SimplexElementGroup:
+        dcoll = make_discretization_collection(
+            actx, mesh,
+            discr_tag_to_group_factory={
+                DISCR_TAG_BASE: InterpolatoryEdgeClusteredGroupFactory(order),
+                DISCR_TAG_QUAD: QuadratureGroupFactory(3 * order)
+            })
 
-        else:
-            raise AssertionError('Expecting TensorProductElementGroup or '
-                                 f'SimplexElementGroup. Found {group_cls}')
+        # else:
+        #    raise AssertionError('Expecting TensorProductElementGroup or '
+        #                         f'SimplexElementGroup. Found {group_cls}')
 
         alpha = 0.3
         rot_mat = np.array([
@@ -172,7 +172,7 @@ def test_gradient(actx_factory, form, dim, order, warp_mesh, vectorize, nested,
             dd_allfaces = dd.with_domain_tag(
                 BoundaryDomainTag(FACE_RESTR_ALL, VTAG_ALL)
                 )
-            normal = geometry.normal(actx, dcoll, dd)
+            normal = geo.normal(actx, dcoll, dd)
             u_avg = u_tpair.avg
             if vectorize:
                 if nested:
@@ -360,7 +360,7 @@ def test_divergence(actx_factory, form, dim, order, vectorize, nested,
             dd_allfaces = dd.with_domain_tag(
                 BoundaryDomainTag(FACE_RESTR_ALL, VTAG_ALL)
                 )
-            normal = geometry.normal(actx, dcoll, dd)
+            normal = geo.normal(actx, dcoll, dd)
             flux = u_tpair.avg @ normal
             return op.project(dcoll, dd, dd_allfaces, flux)
 
