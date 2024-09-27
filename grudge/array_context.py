@@ -303,19 +303,21 @@ class _DistributedLazilyPyOpenCLCompilingFunctionCaller(
 #                    dict_of_named_arrays)
 #            else:
 #                raise
-        distributed_partition = pt.find_distributed_partition(
-            # pylint-ignore-reason:
-            # '_BasePytatoArrayContext' has no
-            # 'mpi_communicator' member
-            # pylint: disable=no-member
-            self.actx.mpi_communicator, dict_of_named_arrays)
 
-        if __debug__:
-            # pylint-ignore-reason:
-            # '_BasePytatoArrayContext' has no 'mpi_communicator' member
-            pt.verify_distributed_partition(
-                self.actx.mpi_communicator,  # pylint: disable=no-member
-                distributed_partition)
+        with ProcessLogger(logger, "pt.find_distributed_partition"):
+            distributed_partition = pt.find_distributed_partition(
+                # pylint-ignore-reason:
+                # '_BasePytatoArrayContext' has no
+                # 'mpi_communicator' member
+                # pylint: disable=no-member
+                self.actx.mpi_communicator, dict_of_named_arrays)
+
+            if __debug__:
+                # pylint-ignore-reason:
+                # '_BasePytatoArrayContext' has no 'mpi_communicator' member
+                pt.verify_distributed_partition(
+                    self.actx.mpi_communicator,  # pylint: disable=no-member
+                    distributed_partition)
 
         self.actx._compile_trace_callback(self.f, "post_find_distributed_partition",
                 distributed_partition)
