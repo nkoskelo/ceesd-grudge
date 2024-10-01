@@ -117,10 +117,13 @@ class _BoxMeshBuilderBase(MeshBuilder):
     group_cls = None
     a = (-0.5, -0.5, -0.5)
     b = (+0.5, +0.5, +0.5)
-    tpe: bool
+    tpe: bool = False
 
-    def __init__(self, tpe=False):
+    def __init__(self, tpe=False, a=(-0.5, -0.5, -0.5),
+                 b=(0.5, 0.5, 0.5)):
         self.tpe = tpe
+        self.a = a
+        self.b = b
 
     def get_mesh(self, resolution, mesh_order=None):
         if mesh_order is None:
@@ -138,33 +141,14 @@ class _BoxMeshBuilderBase(MeshBuilder):
 class BoxMeshBuilder1D(_BoxMeshBuilderBase):
     ambient_dim = 1
 
-    def __init__(self, tpe=False):
-        if tpe:
-            self.group_cls = TensorProductElementGroup
-        else:
-            tpe = False
-        self.tpe = tpe
 
 class BoxMeshBuilder2D(_BoxMeshBuilderBase):
     ambient_dim = 2
-
-    def __init__(self, tpe=False):
-        if tpe:
-            self.group_cls = TensorProductElementGroup
-        else:
-            tpe = False
-        self.tpe = tpe
 
 
 class BoxMeshBuilder3D(_BoxMeshBuilderBase):
     ambient_dim = 3
 
-    def __init__(self, tpe=False):
-        if tpe:
-            self.group_cls = TensorProductElementGroup
-        else:
-            tpe = False
-        self.tpe = tpe
 
 class WarpedRectMeshBuilder(MeshBuilder):
     resolutions: ClassVar[Sequence[Hashable]] = [4, 6, 8]
