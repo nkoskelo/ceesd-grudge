@@ -53,7 +53,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-
+from collections.abc import Hashable
 from dataclasses import dataclass
 from numbers import Number
 from typing import (
@@ -280,7 +280,7 @@ def bv_trace_pair(
 
 def local_interior_trace_pair(
         dcoll: DiscretizationCollection, vec, *,
-        volume_dd: Optional[DOFDesc] = None,
+        volume_dd: DOFDesc | None = None,
         ) -> TracePair:
     r"""Return a :class:`TracePair` for the interior faces of
     *dcoll* with a discretization tag specified by *discr_tag*.
@@ -335,8 +335,8 @@ def interior_trace_pair(dcoll: DiscretizationCollection, vec) -> TracePair:
 
 def interior_trace_pairs(
         dcoll: DiscretizationCollection, vec, *,
-        comm_tag: Optional[Hashable] = None, volume_dd: Optional[DOFDesc] = None
-        ) -> List[TracePair]:
+        comm_tag: Hashable | None = None, volume_dd: DOFDesc | None = None
+        ) -> list[TracePair]:
     r"""Return a :class:`list` of :class:`TracePair` objects
     defined on the interior faces of *dcoll* and any faces connected to a
     parallel boundary.
@@ -484,7 +484,7 @@ def inter_volume_trace_pairs(dcoll: DiscretizationCollection,
 # {{{ distributed: helper functions
 
 class _TagKeyBuilder(KeyBuilder):
-    def update_for_type(self, key_hash, key: Type[Any]):
+    def update_for_type(self, key_hash, key: type[Any]):
         self.rec(key_hash, (key.__module__, key.__name__, key.__name__,))
 
 
@@ -509,7 +509,7 @@ def connected_parts(
     return result
 
 
-def _sym_tag_to_num_tag(comm_tag: Optional[Hashable]) -> Optional[int]:
+def _sym_tag_to_num_tag(comm_tag: Hashable | None) -> int | None:
     if comm_tag is None:
         return comm_tag
 
@@ -798,7 +798,7 @@ def cross_rank_trace_pairs(
         dcoll: DiscretizationCollection, ary: ArrayOrContainer,
         tag: Hashable = None,
         *, comm_tag: Hashable = None,
-        volume_dd: Optional[DOFDesc] = None) -> List[TracePair]:
+        volume_dd: DOFDesc | None = None) -> list[TracePair]:
     r"""Get a :class:`list` of *ary* trace pairs for each partition boundary.
 
     For each partition boundary, the field data values in *ary* are

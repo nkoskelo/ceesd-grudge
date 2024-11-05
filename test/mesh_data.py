@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import ClassVar, Hashable, Optional, Sequence
+from collections.abc import Hashable, Sequence
+from typing import ClassVar
 
 import numpy as np
 
@@ -17,7 +18,7 @@ class MeshBuilder(ABC):
     def get_mesh(
              self,
              resolution: Hashable,
-             mesh_order: Optional[int] = None
+             mesh_order: int | None = None
          ) -> Mesh:
         ...
 
