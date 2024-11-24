@@ -6,8 +6,8 @@ Discontinuous Galerkin operators
 .. automodule:: grudge.flux_differencing
 
 
-Transfering data between discretizations
-========================================
+Transferring data between discretizations
+=========================================
 
 .. automodule:: grudge.projection
 

@@ -1,8 +1,6 @@
 [build-system]
-build-backend = "setuptools.build_meta"
-requires = [
-    "setuptools>=63",
-]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "grudge"
@@ -66,11 +64,6 @@ test = [
 Documentation = "https://documen.tician.de/grudge"
 Homepage = "https://github.com/inducer/grudge"
 
-[tool.setuptools.packages.find]
-include = [
-    "grudge*",
-]
-
 [tool.pytest.ini_options]
 markers = [
     "mpi: mark a test using MPI",
@@ -127,3 +120,19 @@ lines-after-imports = 2
 [tool.mypy]
 python_version = "3.10"
 warn_unused_ignores = true
+
+[tool.typos.default]
+extend-ignore-re = [
+  "(?Rm)^.*(#|//)\\s*spellchecker:\\s*disable-line$"
+]
+
+[tool.typos.default.extend-words]
+# like n-dimensional
+nd = "nd"
+
+# like 'theorem'
+thm = "thm"
+
+[tool.typos.files]
+extend-exclude = [
+]
