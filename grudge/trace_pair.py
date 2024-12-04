@@ -171,6 +171,8 @@ class TracePair:
         assert len(self.exterior) == len(self.interior)
         return len(self.exterior)
 
+    __array_ufunc__ = None
+
     @property
     def int(self):
         """A :class:`~meshmode.dof_array.DOFArray` or
