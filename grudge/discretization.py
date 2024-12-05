@@ -1050,7 +1050,7 @@ def make_discretization_collection(
         i.e. all ranks in the communicator must enter this function at the same
         time.
     """
-    if not isinstance(volumes, Mesh):
+    if not isinstance(volumes, Mesh | Discretization):
         volumes_dict = volumes
     else:
         volumes_dict = {VTAG_ALL: volumes}
@@ -1073,14 +1073,14 @@ def make_discretization_collection(
 
     if any(
             isinstance(mesh_or_discr, Discretization)
-            for mesh_or_discr in volumes.values()):
+            for mesh_or_discr in volumes_dict.values()):
         raise NotImplementedError("Doesn't work at the moment")
 
     volume_discrs = {
         vtag: Discretization(
             array_context,
             _normalize_mesh_part_ids(
-                mesh, vtag, volumes.keys(), mpi_communicator=mpi_communicator),
+                mesh, vtag, volumes_dict.keys(), mpi_communicator=mpi_communicator),
             discr_tag_to_group_factory[DISCR_TAG_BASE])
         for vtag, mesh in volumes_dict.items()}
 

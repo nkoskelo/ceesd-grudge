@@ -517,7 +517,7 @@ class _TagKeyBuilder(KeyBuilder):
 def connected_parts(
         dcoll: DiscretizationCollection,
         self_volume_tag: VolumeTag,
-        other_volume_tag: VolumeTag
+        other_volume_tag: VolumeTag,
         volume_dd: DOFDesc | None = None) -> Sequence[PartID]:
 
     if volume_dd is None:
