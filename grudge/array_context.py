@@ -55,6 +55,30 @@ logger = logging.getLogger(__name__)
 
 
 try:
+    # FIXME: temporary workaround while SingleGridWorkBalancingPytatoArrayContext
+    # is not available in meshmode's main branch
+    # (it currently needs
+    # https://github.com/kaushikcfd/meshmode/tree/pytato-array-context-transforms)
+    from meshmode.array_context import SingleGridWorkBalancingPytatoArrayContext
+
+    try:
+        # Crude check if we have the correct loopy branch
+        # (https://github.com/kaushikcfd/loopy/tree/pytato-array-context-transforms)
+        from loopy.codegen.result import get_idis_for_kernel  # noqa
+    except ImportError:
+        # warn("Your loopy and meshmode branches are mismatched. "
+        #      "Please make sure that you have the "
+        #      "https://github.com/kaushikcfd/loopy/tree/pytato-array-context-transforms "  # noqa
+        #      "branch of loopy.")
+        _HAVE_SINGLE_GRID_WORK_BALANCING = False
+    else:
+        _HAVE_SINGLE_GRID_WORK_BALANCING = True
+
+except ImportError:
+    _HAVE_SINGLE_GRID_WORK_BALANCING = False
+
+
+try:
     # FIXME: temporary workaround while FusionContractorArrayContext
     # is not available in meshmode's main branch
     from meshmode.array_context import FusionContractorArrayContext
@@ -413,7 +437,7 @@ class _DistributedCompiledFunction:
                 self.actx, self.input_id_to_name_in_program, arg_id_to_arg)
 
         from pytato import execute_distributed_partition
-        assert isinstance(self.actx, PytatoPyOpenCLArrayContext | PyOpenCLArrayContext)
+        # assert isinstance(self.actx, PytatoPyOpenCLArrayContext | PyOpenCLArrayContext)
         out_dict = execute_distributed_partition(
                 self.distributed_partition, self.part_id_to_prg,
                 self.actx.queue, self.actx.mpi_communicator,  # pylint: disable=no-member
@@ -432,6 +456,48 @@ class _DistributedCompiledFunction:
         return rec_keyed_map_array_container(to_output_template,
                                              self.output_template)
 
+
+class MPIPytatoArrayContextBase(MPIBasedArrayContext):
+    def __init__(
+            self, mpi_communicator, queue, *,
+            mpi_base_tag, allocator=None,
+            compile_trace_callback: Optional[Callable[[Any, str, Any], None]] = None,
+            use_axis_tag_inference_fallback: bool = False,
+            use_einsum_inference_fallback: bool = False) -> None:
+        """
+        :arg compile_trace_callback: A function of three arguments
+            *(what, stage, ir)*, where *what* identifies the object
+            being compiled, *stage* is a string describing the compilation
+            pass, and *ir* is an object containing the intermediate
+            representation. This interface should be considered
+            unstable.
+        """
+        if allocator is None:
+            warn("No memory allocator specified, please pass one. "
+                 "(Preferably a pyopencl.tools.MemoryPool in order "
+                 "to reduce device allocations)", stacklevel=2)
+
+        super().__init__(queue, allocator,
+                compile_trace_callback=compile_trace_callback,
+                use_axis_tag_inference_fallback=use_axis_tag_inference_fallback,
+                use_einsum_inference_fallback=use_einsum_inference_fallback)
+
+        self.mpi_communicator = mpi_communicator
+        self.mpi_base_tag = mpi_base_tag
+
+    # FIXME: implement distributed-aware freeze
+
+    def compile(self, f: Callable[..., Any]) -> Callable[..., Any]:
+        return _DistributedLazilyPyOpenCLCompilingFunctionCaller(self, f)
+
+    def clone(self):
+        # type-ignore-reason: 'DistributedLazyArrayContext' has no 'queue' member
+        # pylint: disable=no-member
+        return type(self)(self.mpi_communicator, self.queue,
+                mpi_base_tag=self.mpi_base_tag,
+                allocator=self.allocator,
+                use_axis_tag_inference_fallback=self.use_axis_tag_inference_fallback,
+                use_einsum_inference_fallback=self.use_einsum_inference_fallback)
 
 # }}}
 
@@ -539,12 +605,29 @@ class MPIBasePytatoPyOpenCLArrayContext(
                 use_einsum_inference_fallback=self.use_einsum_inference_fallback)
 
 
-MPIPytatoArrayContext: type[MPIBasedArrayContext] = MPIBasePytatoPyOpenCLArrayContext
+# class MPIBasePytatoPyOpenCLArrayContext(
+#        MPIPytatoArrayContextBase, PytatoPyOpenCLArrayContext):
+#    """
+#    .. autofunction:: __init__
+#    """
+#    pass
 
+if _HAVE_SINGLE_GRID_WORK_BALANCING:
+    class MPISingleGridWorkBalancingPytatoArrayContext(
+            MPIPytatoArrayContextBase, SingleGridWorkBalancingPytatoArrayContext):
+        """
+        .. autofunction:: __init__
+        """
+
+    MPIPytatoArrayContext = MPISingleGridWorkBalancingPytatoArrayContext
+else:
+    MPIPytatoArrayContext = MPIBasePytatoPyOpenCLArrayContext
+
+MPIPytatoArrayContext: type[MPIBasedArrayContext] = MPIBasePytatoPyOpenCLArrayContext
 
 if _HAVE_FUSION_ACTX:
     class MPIFusionContractorArrayContext(
-            MPIBasePytatoPyOpenCLArrayContext, FusionContractorArrayContext):
+            MPIPytatoArrayContextBase, FusionContractorArrayContext):
         """
         .. autofunction:: __init__
         """
@@ -608,14 +691,25 @@ register_pytest_array_context_factory("grudge.numpy",
 
 
 def _get_single_grid_pytato_actx_class(distributed: bool) -> type[ArrayContext]:
-    warn("No device-parallel actx available, execution will be slow.",
-         stacklevel=1)
+    if not _HAVE_SINGLE_GRID_WORK_BALANCING:
+        warn("No device-parallel actx available, execution will be slow. "
+             "Please make sure you have the right branches for loopy "
+             "(https://github.com/kaushikcfd/loopy/tree/pytato-array-context-transforms) "  # noqa
+             "and meshmode "
+             "(https://github.com/kaushikcfd/meshmode/tree/pytato-array-context-transforms).",
+             stacklevel=1)
     # lazy, non-distributed
     if not distributed:
-        return PytatoPyOpenCLArrayContext
+        if _HAVE_SINGLE_GRID_WORK_BALANCING:
+            return SingleGridWorkBalancingPytatoArrayContext
+        else:
+            return PytatoPyOpenCLArrayContext
     else:
         # distributed+lazy:
-        return MPIBasePytatoPyOpenCLArrayContext
+        if _HAVE_SINGLE_GRID_WORK_BALANCING:
+            return MPISingleGridWorkBalancingPytatoArrayContext
+        else:
+            return MPIBasePytatoPyOpenCLArrayContext
 
 
 def get_reasonable_array_context_class(
@@ -668,7 +762,7 @@ def get_reasonable_array_context_class(
                 "device-parallel=%r",
                 actx_class.__name__, lazy, distributed,
                 # eager is always device-parallel:
-                (_HAVE_FUSION_ACTX or not lazy))
+                (_HAVE_SINGLE_GRID_WORK_BALANCING or _HAVE_FUSION_ACTX or not lazy))
     return actx_class
 
 # }}}
