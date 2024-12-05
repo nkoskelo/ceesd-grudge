@@ -81,8 +81,9 @@ from grudge.trace_pair import TracePair
 @dataclass_array_container
 @dataclass(frozen=True)
 class ConservedEulerField:
-    mass: DOFArray
-    energy: DOFArray
+    # mass and energy become arrays when computing fluxes.
+    mass: DOFArray | np.ndarray
+    energy: DOFArray | np.ndarray
     momentum: np.ndarray
 
     @property

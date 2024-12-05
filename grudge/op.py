@@ -38,12 +38,10 @@ these symbols correctly.)
 
 .. class:: ArrayOrContainer
 
-    See :class:`arraycontext.ArrayOrContainer`.
+    See :data:`arraycontext.ArrayOrContainer`.
 """
 
 from __future__ import annotations
-
-from meshmode.discretization import InterpolatoryElementGroupBase, NodalElementGroupBase
 
 
 __copyright__ = """
@@ -72,11 +70,22 @@ THE SOFTWARE.
 """
 
 
+from collections.abc import Hashable
 from functools import partial
 import numpy as np
 
 import modepy as mp
-from arraycontext import ArrayContext, ArrayOrContainer, map_array_container, tag_axes
+from arraycontext import (
+    Array,
+    ArrayContext,
+    ArrayOrContainer,
+    map_array_container,
+    tag_axes,
+)
+from meshmode.discretization import (
+    InterpolatoryElementGroupBase,
+    NodalElementGroupBase,
+)
 from meshmode.dof_array import DOFArray, warn
 from meshmode.transform_metadata import (
     DiscretizationDOFAxisTag,
@@ -124,6 +133,7 @@ from grudge.trace_pair import (
     bdry_trace_pair,
     bv_trace_pair,
     # connected_ranks,
+    connected_parts,
     cross_rank_trace_pairs,
     cross_rank_inter_volume_trace_pairs,
     inter_volume_trace_pairs,
@@ -302,16 +312,21 @@ def _divergence_kernel(actx, out_discr, in_discr, get_diff_mat, inv_jac_mat, vec
 
 def _reference_derivative_matrices(actx: ArrayContext,
         out_element_group: NodalElementGroupBase,
-        in_element_group: InterpolatoryElementGroupBase):
+        in_element_group: InterpolatoryElementGroupBase) -> Array:
+
+    def memoize_key(
+                out_grp: NodalElementGroupBase, in_grp: InterpolatoryElementGroupBase
+            ) -> Hashable:
+        return (
+            out_grp.discretization_key(),
+            in_grp.discretization_key())
 
     @keyed_memoize_in(
         actx, _reference_derivative_matrices,
-        lambda outgrp, ingrp: (
-            outgrp.discretization_key(),
-            ingrp.discretization_key()))
+        memoize_key)
     def get_ref_derivative_mats(
                 out_grp: NodalElementGroupBase,
-                in_grp: InterpolatoryElementGroupBase):
+                in_grp: InterpolatoryElementGroupBase) -> Array:
         return actx.freeze(
                 actx.tag_axis(
                     1, DiscretizationDOFAxisTag(),

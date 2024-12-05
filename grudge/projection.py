@@ -40,7 +40,11 @@ from numbers import Number
 
 import numpy as np
 
-from arraycontext import ArrayOrContainer, map_array_container
+from arraycontext import (
+    ArrayOrContainer,
+    ArrayOrContainerOrScalarT,
+    map_array_container
+)
 
 from grudge.discretization import DiscretizationCollection
 from grudge.dof_desc import (
@@ -57,9 +61,10 @@ from pytools import keyed_memoize_in
 
 
 def project(
-        dcoll: DiscretizationCollection,
-        src: ConvertibleToDOFDesc,
-        tgt: ConvertibleToDOFDesc, vec) -> ArrayOrContainer:
+            dcoll: DiscretizationCollection,
+            src: ConvertibleToDOFDesc,
+            tgt: ConvertibleToDOFDesc, vec: ArrayOrContainerOrScalarT
+        ) -> ArrayOrContainerOrScalarT:
     """Project from one discretization to another, e.g. from the
     volume to the boundary, or from the base to the an overintegrated
     quadrature discretization.
