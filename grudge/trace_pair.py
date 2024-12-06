@@ -842,7 +842,7 @@ def _replace_dof_arrays(array_container, dof_array):
 
 def cross_rank_trace_pairs(
         dcoll: DiscretizationCollection, ary: ArrayOrContainer,
-        *, comm_tag: Hashable = None,
+        *, tag: Hashable = None, comm_tag: Hashable = None,
         volume_dd: DOFDesc | None = None) -> list[TracePair]:
     r"""Get a :class:`list` of *ary* trace pairs for each partition boundary.
 
@@ -887,6 +887,16 @@ def cross_rank_trace_pairs(
     if dcoll.mpi_communicator is None:
         return []
 
+    if tag is not None:
+        warn("Specifying 'tag' is deprecated and will stop working in July of 2022. "
+                "Specify 'comm_tag' (keyword-only) instead.",
+                DeprecationWarning, stacklevel=2)
+        if comm_tag is not None:
+            raise TypeError("may only specify one of 'tag' and 'comm_tag'")
+        else:
+            comm_tag = tag
+    del tag
+
     if isinstance(ary, Number):
         # NOTE: Assumed that the same number is passed on every rank
         return [TracePair(
@@ -923,8 +933,10 @@ def cross_rank_trace_pairs(
             for remote_part_id in remote_part_ids]
 
     from grudge.array_context import MPIBasePytatoPyOpenCLArrayContext
+    from grudge.array_context import MPIPytatoArrayContextBase
 
-    if isinstance(actx, MPIBasePytatoPyOpenCLArrayContext):
+    if (isinstance(actx, MPIBasePytatoPyOpenCLArrayContext) or \
+        isinstance(actx, MPIPytatoArrayContextBase)):
         rbc_class: type[
             _RankBoundaryCommunicationEager | _RankBoundaryCommunicationLazy
         ] = _RankBoundaryCommunicationLazy
