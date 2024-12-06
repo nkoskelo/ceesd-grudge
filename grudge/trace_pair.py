@@ -897,12 +897,31 @@ def cross_rank_trace_pairs(
             comm_tag = tag
     del tag
 
-    if isinstance(ary, Number):
-        # NOTE: Assumed that the same number is passed on every rank
-        return [TracePair(
-                volume_dd.trace(BTAG_PARTITION(remote_rank)),
-                interior=ary, exterior=ary)
-            for remote_rank in connected_parts(dcoll, volume_dd=volume_dd)]
+    # This next bit causes a strange error for multi-volume domains:
+    # -------
+    #  File "/mirgecom/diffusion.py", line 835, in diffusion_operator
+    #  kappa_tpairs = interior_trace_pairs(
+    #                 ^^^^^^^^^^^^^^^^^^^^^
+    #  File "grudge/trace_pair.py", line 385, in interior_trace_pairs
+    # *cross_rank_trace_pairs(dcoll, vec, comm_tag=comm_tag, volume_dd=volume_dd)]
+    #  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    #  File "grudge/trace_pair.py", line 905, in cross_rank_trace_pairs
+    # for remote_rank in connected_parts(dcoll, volume_dd=volume_dd)]
+    #                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    #  File "pytools/__init__.py", line 747, in wrapper
+    # result = function(obj, *args, **kwargs)
+    #          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    # TypeError: connected_parts() missing 2 required positional arguments:
+    # 'self_volume_tag' and 'other_volume_tag'
+    # --------
+
+    # Disabling this bit due to above error
+    # if isinstance(ary, Number):
+    #    # NOTE: Assumed that the same number is passed on every rank
+    #    return [TracePair(
+    #            volume_dd.trace(BTAG_PARTITION(remote_rank)),
+    #           interior=ary, exterior=ary)
+    #        for remote_rank in connected_parts(dcoll, volume_dd=volume_dd)]
 
     rank = dcoll.mpi_communicator.Get_rank()
 
