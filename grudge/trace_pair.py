@@ -916,12 +916,15 @@ def cross_rank_trace_pairs(
     # --------
 
     # Disabling this bit due to above error
-    # if isinstance(ary, Number):
-    #    # NOTE: Assumed that the same number is passed on every rank
-    #    return [TracePair(
-    #            volume_dd.trace(BTAG_PARTITION(remote_rank)),
-    #           interior=ary, exterior=ary)
-    #        for remote_rank in connected_parts(dcoll, volume_dd=volume_dd)]
+    if isinstance(ary, Number):
+        # NOTE: Assumed that the same number is passed on every rank
+        voltag = volume_dd.domain_tag.tag
+        return [TracePair(
+            volume_dd.trace(BTAG_PARTITION(remote_rank)),
+            interior=ary, exterior=ary)
+                for remote_rank in connected_parts(dcoll,
+                                                   self_volume_tag=voltag,
+                                                   other_volume_tag=voltag)]
 
     rank = dcoll.mpi_communicator.Get_rank()
 
