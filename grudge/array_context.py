@@ -45,7 +45,7 @@ from typing_extensions import Self
 
 from meshmode.array_context import (
     PyOpenCLArrayContext as _PyOpenCLArrayContextBase,
-    PytatoPyOpenCLArrayContext as _PytatoPyOpenCLArrayContextBase,
+    PytatoPyOpenCLArrayContext as _PytatoPyOpenCLArrayContextBase, # This already has the parameter study capability. :)
 )
 from pytools import to_identifier
 from pytools.tag import Tag
@@ -99,10 +99,12 @@ try:
 except ImportError:
     _HAVE_FUSION_ACTX = False
 
+_HAVE_PARAMETER_STUDY_CAPABILITY = False 
 
 from arraycontext import ArrayContext, NumpyArrayContext
 from arraycontext.container import ArrayContainer
 from arraycontext.impl.pytato.compile import LazilyPyOpenCLCompilingFunctionCaller
+from arraycontext.parameter_study import ParamStudyLazyPyOpenCLFunctionCaller
 from arraycontext.pytest import (
     _PytestNumpyArrayContextFactory,
     _PytestPyOpenCLArrayContextFactoryWithClass,
@@ -216,7 +218,6 @@ class PytatoPyOpenCLArrayContext(_PytatoPyOpenCLArrayContextBase):
 
 # }}}
 
-
 class MPIBasedArrayContext(ArrayContext):
     mpi_communicator: MPI.Intracomm
 
@@ -241,7 +242,7 @@ class _DistributedPartProgramID:
 
 
 class _DistributedLazilyPyOpenCLCompilingFunctionCaller(
-        LazilyPyOpenCLCompilingFunctionCaller):
+        ParamStudyLazyPyOpenCLFunctionCaller):
     def _dag_to_compiled_func(self, dict_of_named_arrays,
             input_id_to_name_in_program, output_id_to_name_in_program,
             output_template):
@@ -595,6 +596,7 @@ class MPIBasePytatoPyOpenCLArrayContext(
     # FIXME: implement distributed-aware freeze
 
     def compile(self, f: Callable[..., Any]) -> Callable[..., Any]:
+        breakpoint()
         return _DistributedLazilyPyOpenCLCompilingFunctionCaller(self, f)
 
     def clone(self) -> Self:
@@ -702,6 +704,9 @@ def _get_single_grid_pytato_actx_class(distributed: bool) -> type[ArrayContext]:
     if not distributed:
         if _HAVE_SINGLE_GRID_WORK_BALANCING:
             return SingleGridWorkBalancingPytatoArrayContext
+        elif _HAVE_PARAMETER_STUDY_CAPABILITY:
+            return ParameterStudyPytatoPyOpenCLArrayContext
+
         else:
             return PytatoPyOpenCLArrayContext
     else:
